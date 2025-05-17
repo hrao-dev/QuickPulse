@@ -9,3 +9,4 @@ numpy
 requests
 gradio
 lxml_html_clean
+sentence_transformers
