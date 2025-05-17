@@ -4,7 +4,6 @@
 # News Source Integration
 # This script integrates with various news sources to fetch the latest articles from the specified news sources, extracts relevant information such as title, URL,Source,Author and Publish date.
 
-import config
 import requests
 import feedparser
 
@@ -14,7 +13,7 @@ def fetch_articles_newsapi(topic):
     """
     url = 'https://newsapi.org/v2/everything'
     params = {
-        'apiKey': config.api_key,
+        'apiKey': api_key,
         'language': 'en',
         'q': topic,
         'pageSize': 20
