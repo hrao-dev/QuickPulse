@@ -6,12 +6,16 @@
 
 import requests
 import feedparser
+import os 
 
 def fetch_articles_newsapi(topic):
     """
     Fetch articles from NewsAPI based on the provided topic.
     """
     url = 'https://newsapi.org/v2/everything'
+    api_key = os.environ.get("api_key")  # Make sure the key name matches what's in HF settings
+    if not api_key:
+        raise ValueError("API_KEY is not set in environment variables.")    
     params = {
         'apiKey': api_key,
         'language': 'en',
