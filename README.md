@@ -4,8 +4,6 @@
 
 ---
 
-## Overview
-
 Quick Pulse combines advanced summarization models with sentiment scoring and topic modeling to provide a real-time snapshot of media narratives. It enables users to track evolving themes and emotional tone across diverse news sources all in one interactive interface powered by Gradio.
 
 ---
@@ -65,3 +63,21 @@ Experience QuickPulse instantly in your browser:
 
 ---
 
+## 📚 Use Cases
+- #### Market Intelligence & Trend Tracking
+Stay on top of fast-moving trends across tech, finance, and science by summarizing Reddit and Hacker News discussions into digestible insights.
+
+- #### Research and Academic Monitoring
+Aggregate public sentiment and community discussion around emerging technologies, scientific papers, or open-source tools.
+
+- #### Product Discovery & Competitive Analysis
+Identify popular tools, frameworks, and user pain points discussed in real-world tech communities.
+
+- #### Developer News Feeds
+Build a personalized, summarized feed of what the developer community is talking about—without endless scrolling.
+
+- #### Internal Dashboards & Reporting
+Integrate into internal tools for weekly digests, sentiment summaries, or team briefings on community conversations.
+
+- #### Startup Scouting & Ecosystem Analysis
+Use semantic clustering to spot early-stage products or startups gaining traction in niche discussions.
