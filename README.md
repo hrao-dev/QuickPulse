@@ -1,12 +1,12 @@
 ---
 title: QuickPulse
 emoji: 🌍
-colorFrom: pink
-colorTo: gray
+colorFrom: blue
+colorTo: green
 sdk: gradio
-sdk_version: 5.29.1
+sdk_version: 5.34.0
 app_file: app.py
-pinned: false
+pinned: true
 short_description: News Stories in Context
 ---
 # Quick Pulse  
