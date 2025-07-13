@@ -9,8 +9,9 @@ from extract_news import extract_news_articles, create_dataframe, save_to_csv
 def fetch_newsapi_top_headlines(min_length=100, max_articles=30):
     import config
     url = 'https://newsapi.org/v2/top-headlines'
+    api_key = os.environ.get("api_key")
     params = {
-        'apiKey': config.api_key,
+        'apiKey': api_key,
         'language': 'en',
         'pageSize': max_articles
     }
@@ -62,8 +63,9 @@ def fetch_newsapi_top_headlines(min_length=100, max_articles=30):
 def fetch_newsapi_everything(topic, min_length=100, max_articles=50):
     import config
     url = 'https://newsapi.org/v2/everything'
+    api_key = os.environ.get("api_key")
     params = {
-        'apiKey': config.api_key,
+        'apiKey': api_key,
         'language': 'en',
         'q': topic,
         'pageSize': max_articles,
