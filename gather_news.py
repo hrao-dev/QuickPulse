@@ -4,6 +4,7 @@
 # extracts relevant information such as title, URL, Source, Author and Publish date, and extracts full content.
 
 import requests
+import os
 from extract_news import extract_news_articles, create_dataframe, save_to_csv
 
 def fetch_newsapi_top_headlines(min_length=100, max_articles=30):
