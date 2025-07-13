@@ -28,6 +28,7 @@ def reduce_dimensions(embeddings, n_neighbors=10, min_dist=0.0, n_components=5, 
         min_dist=min_dist,
         n_components=n_components,
         random_state=random_state,
+        n_jobs=1,
         metric='cosine'
     )
     reduced = reducer.fit_transform(embeddings)
