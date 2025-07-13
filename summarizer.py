@@ -6,14 +6,6 @@ from transformers import pipeline
 # Load summarization pipeline
 summarizer = pipeline("summarization", model="harao-ml/flant5-finetuned-summarize")
 
-# Load once globally
-
-#from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-
-#tokenizer = AutoTokenizer.from_pretrained("flant5-base")
-#model = AutoModelForSeq2SeqLM.from_pretrained("flant5-base")
-#summarizer = pipeline("summarization", model=model, tokenizer=tokenizer)
-
 # Function to split text into smaller chunks
 def split_text(text, max_tokens=512):
     words = text.split()

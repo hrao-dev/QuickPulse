@@ -9,4 +9,7 @@ numpy
 requests
 gradio
 lxml_html_clean
+plotly.express
+hdbscan
+umap
 sentence_transformers

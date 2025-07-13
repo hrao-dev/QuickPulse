@@ -1,7 +1,4 @@
 # input_topic.py
-
-
-# Input Design
 # This script is designed to take user input for a topic or a keyword and validate it before using it in a news summarization application.
 
 def get_topic():
