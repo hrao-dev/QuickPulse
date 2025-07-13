@@ -11,5 +11,5 @@ gradio
 lxml_html_clean
 plotly.express
 hdbscan
-umap
+umap-learn
 sentence_transformers
