@@ -1,6 +1,6 @@
 # requirements.txt file to install app dependencies
 pandas
-transformers
+transformers==4.44.0
 torch
 newspaper3k
 nltk
