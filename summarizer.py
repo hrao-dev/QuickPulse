@@ -5,7 +5,7 @@ from transformers import pipeline
 
 # Load summarization pipeline
 #summarizer = pipeline("summarization", model="harao-ml/flant5-finetuned-summarize")
-summarizer = pipeline("text2text-generation", model="harao-ml/flant5-finetuned-summarize")
+summarizer = pipeline("text-generation", model="harao-ml/flant5-finetuned-summarize")
 
 # Function to split text into smaller chunks
 def split_text(text, max_tokens=512):
