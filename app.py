@@ -27,15 +27,22 @@ import plotly.express as px
 # ─────────────────────────────────────────────────────────────────────────────
 
 _DARK_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
 /* ── Root reset ── */
 *, *::before, *::after { box-sizing: border-box; }
 
-body, .gradio-container {
+/* ── Force dark on every surface Gradio uses (local + HF) ── */
+body,
+html,
+.gradio-container,
+.gradio-container > .main,
+.gradio-container > .main > .wrap,
+.gradio-container > div,
+#root,
+.app {
     background: #0d0f12 !important;
+    background-color: #0d0f12 !important;
     color: #e8eaf0 !important;
-    font-family: 'Inter', system-ui, sans-serif !important;
+    font-family: Inter, system-ui, sans-serif !important;
 }
 
 /* ── Panel / block surfaces ── */
@@ -44,8 +51,13 @@ body, .gradio-container {
 .gradio-container .panel,
 .gradio-container .wrap,
 .gradio-container div.svelte-1ipelgc,
-.gradio-container .tabitem {
+.gradio-container .gap,
+.gradio-container .padded,
+.gradio-container .tabitem,
+.contain,
+.gap {
     background: #13161b !important;
+    background-color: #13161b !important;
     border-color: #252932 !important;
 }
 
@@ -177,76 +189,35 @@ body, .gradio-container {
 ::-webkit-scrollbar-track { background: #0d0f12; }
 ::-webkit-scrollbar-thumb { background: #252932; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #65C23A; }
-"""
 
-_HERO_HTML = """
-<div style="
-    text-align: center;
-    padding: 48px 24px 36px;
-    background: linear-gradient(160deg, #0d0f12 0%, #111620 100%);
-">
-    <div style="
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: rgba(101,194,58,0.10);
-        border: 1px solid rgba(101,194,58,0.25);
-        border-radius: 20px;
-        padding: 5px 14px;
-        margin-bottom: 22px;
-    ">
-        <span style="
-            display: inline-block;
-            width: 7px; height: 7px;
-            border-radius: 50%;
-            background: #65C23A;
-            box-shadow: 0 0 6px #65C23A;
-            animation: pulse-dot 2s ease-in-out infinite;
-        "></span>
-        <span style="
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: #65C23A;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            font-family: 'JetBrains Mono', monospace;
-        ">live · multi-source</span>
-    </div>
-
-    <h1 style="
-        margin: 0 0 10px;
-        font-size: clamp(2rem, 5vw, 2.8rem);
-        font-weight: 700;
-        color: #e8eaf0;
-        letter-spacing: -0.02em;
-        font-family: 'Inter', sans-serif;
-    ">QuickPulse</h1>
-
-    <p style="
-        margin: 0 auto 6px;
-        max-width: 520px;
-        font-size: 1rem;
-        color: #65C23A;
-        font-weight: 500;
-        font-family: 'Inter', sans-serif;
-    ">Now do it across the live web.</p>
-
-    <p style="
-        margin: 0 auto;
-        max-width: 560px;
-        font-size: 0.9rem;
-        color: #9aa0ad;
-        line-height: 1.6;
-        font-family: 'Inter', sans-serif;
-    ">Fetch, summarize and cluster many live sources simultaneously — with sentiment, topic analytics, and CSV export.</p>
-</div>
-
-<style>
-@keyframes pulse-dot {
+/* ── Hero pulse dot ── */
+.qp-pulse-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #65C23A;
+    box-shadow: 0 0 6px #65C23A;
+    animation: qp-pulse 2s ease-in-out infinite;
+}
+@keyframes qp-pulse {
     0%, 100% { opacity: 1; box-shadow: 0 0 6px #65C23A; }
     50%       { opacity: 0.5; box-shadow: 0 0 2px #65C23A; }
 }
-</style>
+"""
+
+_HERO_HTML = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<div style="text-align:center;padding:48px 24px 36px;background:linear-gradient(160deg,#0d0f12 0%,#111620 100%);min-height:220px;">
+    <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(101,194,58,0.10);border:1px solid rgba(101,194,58,0.25);border-radius:20px;padding:5px 14px;margin-bottom:22px;">
+        <span class="qp-pulse-dot"></span>
+        <span style="font-size:0.72rem;font-weight:700;color:#65C23A;letter-spacing:0.12em;text-transform:uppercase;font-family:'JetBrains Mono',monospace;">live · multi-source</span>
+    </div>
+    <h1 style="margin:0 0 10px;font-size:clamp(2rem,5vw,2.8rem);font-weight:700;color:#e8eaf0;letter-spacing:-0.02em;font-family:'Inter',sans-serif;">QuickPulse</h1>
+    <p style="margin:0 auto 6px;max-width:520px;font-size:1rem;color:#65C23A;font-weight:500;font-family:'Inter',sans-serif;">Now do it across the live web.</p>
+    <p style="margin:0 auto;max-width:560px;font-size:0.9rem;color:#9aa0ad;line-height:1.6;font-family:'Inter',sans-serif;">Fetch, summarize and cluster many live sources simultaneously — with sentiment, topic analytics, and CSV export.</p>
+</div>
 """
 
 
@@ -644,9 +615,33 @@ def clear_interface():
 
 # ── GRADIO UI ─────────────────────────────────────────────────────────────────
 
-with gr.Blocks(theme=gr.themes.Base(), css=_DARK_CSS) as demo:
+_dark_theme = gr.themes.Base(
+    primary_hue=gr.themes.colors.green,
+    neutral_hue=gr.themes.colors.slate,
+).set(
+    body_background_fill="#0d0f12",
+    body_background_fill_dark="#0d0f12",
+    block_background_fill="#13161b",
+    block_background_fill_dark="#13161b",
+    block_border_color="#252932",
+    block_border_color_dark="#252932",
+    input_background_fill="#1a1e26",
+    input_background_fill_dark="#1a1e26",
+    input_border_color="#252932",
+    input_border_color_dark="#252932",
+    button_primary_background_fill="#65C23A",
+    button_primary_background_fill_dark="#65C23A",
+    button_primary_text_color="#0d0f12",
+    button_primary_text_color_dark="#0d0f12",
+    body_text_color="#e8eaf0",
+    body_text_color_dark="#e8eaf0",
+    body_text_color_subdued="#9aa0ad",
+    body_text_color_subdued_dark="#9aa0ad",
+)
 
-    gr.HTML(_HERO_HTML)
+with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
+
+    gr.Markdown(_HERO_HTML)
 
     with gr.Row():
         with gr.Column(scale=2):
@@ -669,11 +664,11 @@ with gr.Blocks(theme=gr.themes.Base(), css=_DARK_CSS) as demo:
                 sentiment_fig = gr.Plot(label="Sentiment Trends")
             top_clusters_table = gr.Dataframe(label="Top Clusters")
 
-    gr.HTML("<hr style='border:none;border-top:1px solid #252932;margin:32px 0;'>")
+    gr.Markdown("<hr style='border:none;border-top:1px solid #252932;margin:32px 0;'>")
 
     clustered_digest_section = gr.Group(visible=False)
     with clustered_digest_section:
-        gr.HTML(
+        gr.Markdown(
             "<h3 style='"
             "font-family:Inter,sans-serif;"
             "font-size:0.72rem;"
@@ -728,4 +723,4 @@ with gr.Blocks(theme=gr.themes.Base(), css=_DARK_CSS) as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="0.0.0.0")
