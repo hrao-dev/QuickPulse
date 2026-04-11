@@ -1,726 +1,459 @@
-## This script provides a Gradio interface for gathering, clustering, summarizing, and analyzing news articles with sentiment analysis and topic modeling.
+# app.py
+# QuickPulse — Streamlit UI
+#
+# Architecture:
+#   - APScheduler runs pipeline.run() every 30 min in a background thread
+#   - The render path ONLY reads from cache/articles.json — zero blocking API calls
+#   - Users can trigger an on-demand refresh via the sidebar button
+#   - A /healthz route is served by a tiny Thread so UptimeRobot keeps the Space warm
 
-import gather_news
+import json
+import threading
+import time
+import logging
+from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
 import pandas as pd
-import cluster_news
-import summarizer
-import analyze_sentiment
-import extract_news
-import gradio as gr
 import plotly.express as px
+import streamlit as st
+from apscheduler.schedulers.background import BackgroundScheduler
 
-# ── DARK THEME TOKENS ────────────────────────────────────────────────────────
-#  bg_base      #0d0f12   deepest surface
-#  bg_card      #13161b   card / panel surface
-#  bg_elevated  #1a1e26   hover / raised surface
-#  border       #252932   subtle divider
-#  accent       #65C23A   QuickPulse green
-#  accent_dim   #4a9129   muted green
-#  txt_primary  #e8eaf0   headings
-#  txt_secondary #9aa0ad  body / labels
-#  pos_bg       #0d1f0a   positive tint
-#  pos_border   #3a7d1e   positive border
-#  neu_bg       #0e1520   neutral tint
-#  neu_border   #2a5298   neutral border
-#  neg_bg       #1f0d0d   negative tint
-#  neg_border   #8b1a1a   negative border
-# ─────────────────────────────────────────────────────────────────────────────
+import pipeline
 
-_DARK_CSS = """
-/* ── Root reset ── */
-*, *::before, *::after { box-sizing: border-box; }
+# ── logging ──────────────────────────────────────────────────────────────────
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
-/* ── Force dark on every surface Gradio uses (local + HF) ── */
-body,
-html,
-.gradio-container,
-.gradio-container > .main,
-.gradio-container > .main > .wrap,
-.gradio-container > div,
-#root,
-.app {
-    background: #0d0f12 !important;
-    background-color: #0d0f12 !important;
-    color: #e8eaf0 !important;
-    font-family: Inter, system-ui, sans-serif !important;
+# ── brand colours (mirrors original Gradio theme) ────────────────────────────
+ACCENT    = "#65C23A"
+BG_BASE   = "#0d0f12"
+BG_CARD   = "#13161b"
+BG_ELV    = "#1a1e26"
+BORDER    = "#252932"
+TXT_PRI   = "#e8eaf0"
+TXT_SEC   = "#9aa0ad"
+
+SENTIMENT_CFG = {
+    "Positive": {"dot": "#65C23A", "bg": "#0d1f0a", "border": "#3a7d1e"},
+    "Neutral":  {"dot": "#4a7fa5", "bg": "#0e1520", "border": "#2a5298"},
+    "Negative": {"dot": "#c0392b", "bg": "#1f0d0d", "border": "#8b1a1a"},
 }
 
-/* ── Panel / block surfaces ── */
-.gradio-container .block,
-.gradio-container .form,
-.gradio-container .panel,
-.gradio-container .wrap,
-.gradio-container div.svelte-1ipelgc,
-.gradio-container .gap,
-.gradio-container .padded,
-.gradio-container .tabitem,
-.contain,
-.gap {
-    background: #13161b !important;
-    background-color: #13161b !important;
-    border-color: #252932 !important;
-}
+# ── health-check server (keeps HF Space warm) ─────────────────────────────────
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+    def log_message(self, *_):
+        pass  # silence access logs
 
-/* ── Input fields ── */
-.gradio-container input,
-.gradio-container textarea,
-.gradio-container select {
-    background: #1a1e26 !important;
-    color: #e8eaf0 !important;
-    border: 1px solid #252932 !important;
+def _start_health_server():
+    try:
+        srv = HTTPServer(("0.0.0.0", 8080), _HealthHandler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        logger.info("Health server listening on :8080")
+    except Exception as e:
+        logger.warning(f"Health server failed to start: {e}")
+
+# ── background scheduler ─────────────────────────────────────────────────────
+_scheduler_started = False
+
+def _start_scheduler():
+    global _scheduler_started
+    if _scheduler_started:
+        return
+    _scheduler_started = True
+
+    def _refresh():
+        logger.info("Scheduled refresh: top headlines")
+        try:
+            pipeline.run()
+        except Exception as e:
+            logger.error(f"Scheduled refresh failed: {e}")
+
+    # Warm the cache immediately at startup in a daemon thread
+    threading.Thread(target=_refresh, daemon=True).start()
+
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(_refresh, "interval", minutes=30, id="auto_refresh")
+    scheduler.start()
+    logger.info("APScheduler started — refresh every 30 min")
+
+# Run once per interpreter process (Streamlit re-runs the script on every
+# interaction, so guard with a module-level flag)
+_start_health_server()
+_start_scheduler()
+
+
+# ── Streamlit page config ─────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="QuickPulse",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ── global CSS ────────────────────────────────────────────────────────────────
+st.markdown(f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+html, body, [class*="css"] {{
+    font-family: 'Inter', system-ui, sans-serif !important;
+    background-color: {BG_BASE} !important;
+    color: {TXT_PRI} !important;
+}}
+.block-container {{ padding: 2rem 2.5rem 4rem; max-width: 1400px; }}
+
+/* sidebar */
+[data-testid="stSidebar"] {{
+    background-color: {BG_CARD} !important;
+    border-right: 1px solid {BORDER};
+}}
+
+/* inputs */
+input, textarea, [data-baseweb="input"] input {{
+    background-color: {BG_ELV} !important;
+    color: {TXT_PRI} !important;
+    border: 1px solid {BORDER} !important;
     border-radius: 8px !important;
-    font-family: 'Inter', sans-serif !important;
-}
-.gradio-container input:focus,
-.gradio-container textarea:focus {
-    border-color: #65C23A !important;
-    box-shadow: 0 0 0 2px rgba(101,194,58,0.15) !important;
-    outline: none !important;
-}
-.gradio-container label, .gradio-container .label-wrap span {
-    color: #9aa0ad !important;
-    font-size: 0.72rem !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.08em !important;
-    text-transform: uppercase !important;
-}
+}}
 
-/* ── Buttons ── */
-.gradio-container button.primary,
-.gradio-container button[variant="primary"] {
-    background: #65C23A !important;
-    color: #0d0f12 !important;
+/* buttons */
+.stButton > button {{
+    background-color: {ACCENT} !important;
+    color: {BG_BASE} !important;
     border: none !important;
     border-radius: 8px !important;
     font-weight: 700 !important;
     font-size: 0.85rem !important;
-    letter-spacing: 0.03em !important;
-    transition: background 0.2s, transform 0.1s !important;
-}
-.gradio-container button.primary:hover {
-    background: #78d44e !important;
-    transform: translateY(-1px) !important;
-}
-.gradio-container button.secondary,
-.gradio-container button[variant="secondary"] {
-    background: transparent !important;
-    color: #9aa0ad !important;
-    border: 1px solid #252932 !important;
-    border-radius: 8px !important;
-    font-weight: 500 !important;
-    transition: border-color 0.2s, color 0.2s !important;
-}
-.gradio-container button.secondary:hover {
-    border-color: #65C23A !important;
-    color: #65C23A !important;
-}
+    padding: 0.5rem 1.4rem !important;
+    transition: opacity 0.15s;
+}}
+.stButton > button:hover {{ opacity: 0.85; }}
+.stButton > button[kind="secondary"] {{
+    background-color: transparent !important;
+    color: {TXT_SEC} !important;
+    border: 1px solid {BORDER} !important;
+}}
 
-/* ── Accordion ── */
-.gradio-container .accordion {
-    background: #13161b !important;
-    border: 1px solid #252932 !important;
-    border-radius: 8px !important;
-}
-.gradio-container .accordion-header {
-    color: #9aa0ad !important;
-}
+/* multiselect tags */
+[data-baseweb="tag"] {{
+    background-color: rgba(101,194,58,0.15) !important;
+    border: 1px solid rgba(101,194,58,0.4) !important;
+    color: {ACCENT} !important;
+    border-radius: 6px !important;
+}}
 
-/* ── Checkbox group ── */
-.gradio-container .checkbox-group label {
-    color: #e8eaf0 !important;
-    font-size: 0.85rem !important;
-    text-transform: none !important;
-    letter-spacing: normal !important;
-    font-weight: 400 !important;
-}
+/* metric cards */
+[data-testid="metric-container"] {{
+    background-color: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+}}
 
-/* ── Plot / chart container ── */
-.gradio-container .plot-container,
-.gradio-container .js-plotly-plot {
-    background: #13161b !important;
-    border-radius: 10px !important;
-    border: 1px solid #252932 !important;
-}
+/* expander */
+details summary {{
+    cursor: pointer;
+    color: {ACCENT} !important;
+    font-weight: 600;
+    font-size: 0.8rem;
+}}
 
-/* ── Dataframe ── */
-.gradio-container table {
-    background: #13161b !important;
-    border-collapse: collapse !important;
-}
-.gradio-container th {
-    background: #1a1e26 !important;
-    color: #65C23A !important;
-    font-size: 0.72rem !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.08em !important;
-    text-transform: uppercase !important;
-    border-bottom: 1px solid #252932 !important;
-    padding: 10px 14px !important;
-}
-.gradio-container td {
-    color: #9aa0ad !important;
-    border-bottom: 1px solid #1a1e26 !important;
-    padding: 9px 14px !important;
-    font-size: 0.85rem !important;
-}
-.gradio-container tr:hover td {
-    background: #1a1e26 !important;
-    color: #e8eaf0 !important;
-}
+/* scrollbar */
+::-webkit-scrollbar {{ width: 5px; height: 5px; }}
+::-webkit-scrollbar-track {{ background: {BG_BASE}; }}
+::-webkit-scrollbar-thumb {{ background: {BORDER}; border-radius: 3px; }}
 
-/* ── File download ── */
-.gradio-container .file-preview {
-    background: #1a1e26 !important;
-    border: 1px solid #252932 !important;
-    border-radius: 8px !important;
-    color: #9aa0ad !important;
-}
-
-/* ── Markdown prose ── */
-.gradio-container .prose, .gradio-container .gr-markdown {
-    color: #e8eaf0 !important;
-}
-.gradio-container .prose a { color: #65C23A !important; }
-.gradio-container .prose h3 { color: #e8eaf0 !important; }
-.gradio-container hr { border-color: #252932 !important; }
-
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #0d0f12; }
-::-webkit-scrollbar-thumb { background: #252932; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #65C23A; }
-
-/* ── Hero pulse dot ── */
-.qp-pulse-dot {
+/* pulse dot animation */
+@keyframes qp-pulse {{
+    0%, 100% {{ opacity: 1; box-shadow: 0 0 6px {ACCENT}; }}
+    50%       {{ opacity: 0.5; box-shadow: 0 0 2px {ACCENT}; }}
+}}
+.qp-pulse-dot {{
     display: inline-block;
     width: 7px; height: 7px;
     border-radius: 50%;
-    background: #65C23A;
-    box-shadow: 0 0 6px #65C23A;
+    background: {ACCENT};
+    box-shadow: 0 0 6px {ACCENT};
     animation: qp-pulse 2s ease-in-out infinite;
-}
-@keyframes qp-pulse {
-    0%, 100% { opacity: 1; box-shadow: 0 0 6px #65C23A; }
-    50%       { opacity: 0.5; box-shadow: 0 0 2px #65C23A; }
-}
-"""
+    margin-right: 6px;
+}}
+</style>
+""", unsafe_allow_html=True)
 
-_HERO_HTML = """
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<div style="text-align:center;padding:48px 24px 36px;background:linear-gradient(160deg,#0d0f12 0%,#111620 100%);min-height:220px;">
-    <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(101,194,58,0.10);border:1px solid rgba(101,194,58,0.25);border-radius:20px;padding:5px 14px;margin-bottom:22px;">
-        <span class="qp-pulse-dot"></span>
-        <span style="font-size:0.72rem;font-weight:700;color:#65C23A;letter-spacing:0.12em;text-transform:uppercase;font-family:'JetBrains Mono',monospace;">live · multi-source</span>
-    </div>
-    <h1 style="margin:0 0 10px;font-size:clamp(2rem,5vw,2.8rem);font-weight:700;color:#e8eaf0;letter-spacing:-0.02em;font-family:'Inter',sans-serif;">QuickPulse</h1>
-    <p style="margin:0 auto 6px;max-width:520px;font-size:1rem;color:#65C23A;font-weight:500;font-family:'Inter',sans-serif;">Now do it across the live web.</p>
-    <p style="margin:0 auto;max-width:560px;font-size:0.9rem;color:#9aa0ad;line-height:1.6;font-family:'Inter',sans-serif;">Fetch, summarize and cluster many live sources simultaneously — with sentiment, topic analytics, and CSV export.</p>
+
+# ── hero header ───────────────────────────────────────────────────────────────
+st.markdown(f"""
+<div style="text-align:center;padding:40px 24px 28px;background:linear-gradient(160deg,{BG_BASE} 0%,#111620 100%);border-radius:14px;margin-bottom:28px;">
+  <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(101,194,58,0.10);border:1px solid rgba(101,194,58,0.25);border-radius:20px;padding:5px 14px;margin-bottom:18px;">
+    <span class="qp-pulse-dot"></span>
+    <span style="font-size:0.72rem;font-weight:700;color:{ACCENT};letter-spacing:0.12em;text-transform:uppercase;font-family:'JetBrains Mono',monospace;">live · multi-source</span>
+  </div>
+  <h1 style="margin:0 0 8px;font-size:clamp(2rem,5vw,2.8rem);font-weight:700;color:{TXT_PRI};letter-spacing:-0.02em;">QuickPulse</h1>
+  <p style="margin:0 auto 4px;max-width:520px;font-size:1rem;color:{ACCENT};font-weight:500;">Fetch, cluster and summarise live news — instantly.</p>
+  <p style="margin:0 auto;max-width:560px;font-size:0.88rem;color:{TXT_SEC};line-height:1.6;">Multi-source · Sentiment analysis · HDBSCAN topic clustering · CSV export</p>
 </div>
-"""
+""", unsafe_allow_html=True)
 
 
-# ── CHART HELPERS (dark-themed) ───────────────────────────────────────────────
+# ── sidebar controls ──────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown(f"<p style='color:{ACCENT};font-weight:700;font-size:0.8rem;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:16px;'>Controls</p>", unsafe_allow_html=True)
 
-def plot_topic_frequency(result):
-    df = result["dataframe"]
-    topic_counts = df["cluster_label"].value_counts().reset_index()
-    topic_counts.columns = ["Topic", "Count"]
-    fig = px.bar(
-        topic_counts, x="Topic", y="Count",
-        title="Topic Frequency",
-        color="Count",
-        color_continuous_scale=[[0, "#2a5e14"], [0.5, "#65C23A"], [1, "#a3e87a"]],
+    mode = st.radio("Mode", ["Top Headlines", "Search by Topic", "Custom URLs"], index=0)
+
+    topic_input = ""
+    urls_input  = ""
+
+    if mode == "Search by Topic":
+        topic_input = st.text_input("Topic", placeholder="e.g. climate change")
+
+    if mode == "Custom URLs":
+        urls_input = st.text_area("URLs (one per line)", height=140)
+
+    sentiment_filters = st.multiselect(
+        "Sentiment filter",
+        options=["Positive", "Neutral", "Negative"],
+        default=["Positive", "Neutral", "Negative"],
     )
+
+    st.markdown("---")
+
+    run_btn     = st.button("Generate Digest", use_container_width=True)
+    refresh_btn = st.button("↻  Refresh cache now", use_container_width=True)
+    clear_btn   = st.button("Clear", use_container_width=True)
+
+    st.markdown("---")
+    st.markdown(f"<p style='color:{TXT_SEC};font-size:0.75rem;'>Cache auto-refreshes every 30 min.<br>Use <em>Refresh cache now</em> for latest news.</p>", unsafe_allow_html=True)
+
+
+# ── session-state bootstrap ───────────────────────────────────────────────────
+if "result" not in st.session_state:
+    st.session_state.result = None
+if "running" not in st.session_state:
+    st.session_state.running = False
+
+
+# ── action handlers ───────────────────────────────────────────────────────────
+def _run_pipeline(topic=None, urls=None):
+    with st.spinner("Fetching and processing articles… this takes ~60 s on first run while the model warms up."):
+        url_list = [u.strip() for u in urls.splitlines() if u.strip()] if urls else None
+        result = pipeline.run(topic=topic or None, urls=url_list)
+    if result:
+        st.session_state.result = result
+        st.success(f"Done — {result.get('article_count', len(result.get('articles', [])))} articles, {result.get('number_of_clusters', 0)} clusters.")
+    else:
+        st.warning("No articles returned. Check your API key or try a different topic.")
+
+if clear_btn:
+    st.session_state.result = None
+    st.rerun()
+
+if refresh_btn:
+    _run_pipeline()
+
+if run_btn:
+    if mode == "Search by Topic" and not topic_input.strip():
+        st.sidebar.error("Please enter a topic.")
+    elif mode == "Custom URLs" and not urls_input.strip():
+        st.sidebar.error("Please enter at least one URL.")
+    else:
+        _run_pipeline(
+            topic=topic_input if mode == "Search by Topic" else None,
+            urls=urls_input  if mode == "Custom URLs"    else None,
+        )
+
+
+# ── determine what to render ──────────────────────────────────────────────────
+result = st.session_state.result
+
+# Fall back to cache if no in-session result
+if result is None:
+    cached = pipeline.load_cache()
+    if cached:
+        result = cached
+
+# ── empty state ───────────────────────────────────────────────────────────────
+if not result or not result.get("articles"):
+    st.markdown(f"""
+    <div style="text-align:center;padding:60px 24px;color:{TXT_SEC};">
+        <p style="font-size:2rem;margin-bottom:12px;">📰</p>
+        <p style="font-size:1rem;font-weight:600;color:{TXT_PRI};">No digest yet</p>
+        <p style="font-size:0.88rem;">Click <strong>Generate Digest</strong> or <strong>Refresh cache now</strong> in the sidebar.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+
+# ── build dataframe from result ───────────────────────────────────────────────
+df = pd.DataFrame(result["articles"])
+df["sentiment"] = df["sentiment"].str.capitalize()
+
+meta = result.get("meta", {})
+refreshed_at = meta.get("refreshed_at", "")
+if refreshed_at:
+    try:
+        ts = datetime.fromisoformat(refreshed_at)
+        st.caption(f"Last refreshed: {ts.strftime('%d %b %Y %H:%M UTC')}  ·  {meta.get('article_count', len(df))} articles  ·  topic: {meta.get('topic', '—')}")
+    except Exception:
+        pass
+
+# Apply sentiment filter
+if sentiment_filters:
+    df_filtered = df[df["sentiment"].isin(sentiment_filters)]
+else:
+    df_filtered = df.copy()
+
+
+# ── metrics row ───────────────────────────────────────────────────────────────
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Articles", len(df))
+m2.metric("Clusters", result.get("number_of_clusters", df["cluster_label"].nunique() if "cluster_label" in df.columns else 0))
+m3.metric("Positive", int((df["sentiment"] == "Positive").sum()))
+m4.metric("Negative", int((df["sentiment"] == "Negative").sum()))
+
+st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+
+# ── charts ────────────────────────────────────────────────────────────────────
+def _dark_layout(fig, title=""):
     fig.update_layout(
-        showlegend=False,
-        height=350,
-        paper_bgcolor="#13161b",
-        plot_bgcolor="#13161b",
-        font=dict(family="Inter, sans-serif", color="#9aa0ad", size=12),
-        title_font=dict(color="#e8eaf0", size=14, family="Inter, sans-serif"),
+        height=320,
+        title=dict(text=title, font=dict(color=TXT_PRI, size=13, family="Inter")),
+        paper_bgcolor=BG_CARD,
+        plot_bgcolor=BG_CARD,
+        font=dict(family="Inter, sans-serif", color=TXT_SEC, size=11),
+        margin=dict(l=16, r=16, t=40, b=16),
         coloraxis_showscale=False,
-        xaxis=dict(
-            gridcolor="#1a1e26",
-            linecolor="#252932",
-            tickfont=dict(color="#9aa0ad", size=10),
-        ),
-        yaxis=dict(
-            gridcolor="#1a1e26",
-            linecolor="#252932",
-            tickfont=dict(color="#9aa0ad", size=10),
-        ),
-        margin=dict(l=16, r=16, t=44, b=16),
+        legend=dict(bgcolor=BG_ELV, bordercolor=BORDER, borderwidth=1, font=dict(color=TXT_SEC, size=11)),
+        xaxis=dict(gridcolor=BG_ELV, linecolor=BORDER, tickfont=dict(color=TXT_SEC, size=10)),
+        yaxis=dict(gridcolor=BG_ELV, linecolor=BORDER, tickfont=dict(color=TXT_SEC, size=10)),
     )
-    fig.update_traces(marker_line_width=0)
     return fig
 
+chart_col1, chart_col2 = st.columns(2)
 
-def plot_sentiment_trends(result):
-    df = result["dataframe"]
-    sentiment_counts = df["sentiment"].value_counts().reset_index()
-    sentiment_counts.columns = ["Sentiment", "Count"]
-    color_map = {
-        "Positive":  "#65C23A",
-        "positive":  "#65C23A",
-        "Neutral":   "#4a7fa5",
-        "neutral":   "#4a7fa5",
-        "Negative":  "#c0392b",
-        "negative":  "#c0392b",
-    }
-    fig = px.pie(
-        sentiment_counts,
-        names="Sentiment",
-        values="Count",
-        title="Sentiment Distribution",
-        color="Sentiment",
-        color_discrete_map=color_map,
-        hole=0.45,
-    )
-    fig.update_traces(
+with chart_col1:
+    if "cluster_label" in df.columns:
+        tc = df["cluster_label"].value_counts().reset_index()
+        tc.columns = ["Topic", "Count"]
+        fig = px.bar(tc, x="Topic", y="Count",
+                     color="Count",
+                     color_continuous_scale=[[0,"#2a5e14"],[0.5,ACCENT],[1,"#a3e87a"]])
+        fig.update_traces(marker_line_width=0)
+        st.plotly_chart(_dark_layout(fig, "Topic frequency"), use_container_width=True)
+
+with chart_col2:
+    sc = df["sentiment"].value_counts().reset_index()
+    sc.columns = ["Sentiment", "Count"]
+    color_map = {"Positive": ACCENT, "Neutral": "#4a7fa5", "Negative": "#c0392b"}
+    fig2 = px.pie(sc, names="Sentiment", values="Count",
+                  color="Sentiment", color_discrete_map=color_map, hole=0.45)
+    fig2.update_traces(
         textinfo="label+percent",
-        textfont=dict(family="Inter, sans-serif", color="#e8eaf0", size=11),
-        marker=dict(line=dict(color="#0d0f12", width=2)),
+        textfont=dict(family="Inter, sans-serif", color=TXT_PRI, size=11),
+        marker=dict(line=dict(color=BG_BASE, width=2)),
     )
-    fig.update_layout(
-        height=350,
-        paper_bgcolor="#13161b",
-        font=dict(family="Inter, sans-serif", color="#9aa0ad", size=12),
-        title_font=dict(color="#e8eaf0", size=14, family="Inter, sans-serif"),
-        legend=dict(
-            bgcolor="#1a1e26",
-            bordercolor="#252932",
-            borderwidth=1,
-            font=dict(color="#9aa0ad", size=11),
-        ),
-        margin=dict(l=16, r=16, t=44, b=16),
-    )
-    return fig
+    st.plotly_chart(_dark_layout(fig2, "Sentiment distribution"), use_container_width=True)
+
+# Top clusters table
+if "cluster_label" in df.columns:
+    with st.expander("Top clusters by article count", expanded=False):
+        top = df["cluster_label"].value_counts().head(8).reset_index()
+        top.columns = ["Cluster", "Articles"]
+        st.dataframe(top, use_container_width=True, hide_index=True)
+
+st.markdown(f"<hr style='border:none;border-top:1px solid {BORDER};margin:28px 0;'>", unsafe_allow_html=True)
 
 
-# ── BACKEND — UNTOUCHED ───────────────────────────────────────────────────────
-
-def render_top_clusters_table(result, top_n=5):
-    df = result["dataframe"]
-    cluster_counts = df["cluster_label"].value_counts().reset_index()
-    cluster_counts.columns = ["Cluster", "Articles"]
-    top_clusters = cluster_counts.head(top_n)
-    return top_clusters
-
-def fetch_and_process_latest_news(sentiment_filters):
-    articles = gather_news.fetch_newsapi_top_headlines()
-    return process_and_display_articles(articles, sentiment_filters, "Top Headlines")
-
-def fetch_and_process_topic_news(topic, sentiment_filters):
-    articles = gather_news.fetch_newsapi_everything(topic)
-    return process_and_display_articles(articles, sentiment_filters, topic or "Topic")
-
-def process_and_display_articles(articles, sentiment_filters, topic_label):
-    if not articles:
-        return sentiment_filters, "", "", "", "", "", None, None, None, gr.update(visible=False)
-
-    articles = sorted(articles, key=lambda x: x.get("publishedAt", ""), reverse=True)
-    extracted_articles = extract_summarize_and_analyze_articles(articles)
-    deduped_articles = deduplicate_articles(extracted_articles)
-    if not deduped_articles:
-        return sentiment_filters, "", "", "", "", "", None, None, None, gr.update(visible=False)
-
-    df = pd.DataFrame(deduped_articles)
-    result = cluster_news.cluster_and_label_articles(df, content_column="content", summary_column="summary")
-    cluster_md_blocks = display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters)
-    csv_file, _ = save_clustered_articles(result["dataframe"], topic_label)
-
-    topic_fig = plot_topic_frequency(result)
-    sentiment_fig = plot_sentiment_trends(result)
-    top_clusters_table = render_top_clusters_table(result)
-
-    return sentiment_filters, *cluster_md_blocks, csv_file, topic_fig, sentiment_fig, top_clusters_table, gr.update(visible=True)
-
-def extract_summarize_and_analyze_articles(articles):
-    extracted_articles = []
-    for article in articles:
-        content = article.get("text") or article.get("content")
-        if not content:
-            continue
-        title = article.get("title", "No title")
-        summary = summarizer.generate_summary(content)
-        sentiment, score = analyze_sentiment.analyze_summary(summary)
-        extracted_articles.append({
-            "title": title,
-            "url": article.get("url"),
-            "source": article.get("source", "Unknown"),
-            "author": article.get("author", "Unknown"),
-            "publishedAt": article.get("publishedAt", "Unknown"),
-            "content": content,
-            "summary": summary,
-            "sentiment": sentiment,
-            "score": score
-        })
-    return extracted_articles
-
-def deduplicate_articles(articles):
-    seen_urls = set()
-    seen_title_source = set()
-    seen_title_summary = set()
-    deduped = []
-    for art in articles:
-        url = art.get("url")
-        title = art.get("title", "").strip().lower()
-        source = art.get("source", "").strip().lower()
-        summary = art.get("summary", "").strip().lower()
-        key_title_source = (title, source)
-        key_title_summary = (title, summary)
-        if url and url in seen_urls:
-            continue
-        if key_title_source in seen_title_source:
-            continue
-        if key_title_summary in seen_title_summary:
-            continue
-        deduped.append(art)
-        if url:
-            seen_urls.add(url)
-        seen_title_source.add(key_title_source)
-        seen_title_summary.add(key_title_summary)
-    return deduped
-
-def extract_summarize_and_analyze_content_from_urls(urls):
-    articles = extract_news.extract_news_articles(urls)
-    return extract_summarize_and_analyze_articles(articles)
-
-def display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters=None):
-    df = result["dataframe"]
-    cluster_primary_topics = result.get("cluster_primary_topics", {})
-    cluster_related_topics = result.get("cluster_related_topics", {})
-    df["sentiment"] = df["sentiment"].str.capitalize()
-
-    if sentiment_filters:
-        df = df[df["sentiment"].isin(sentiment_filters)]
-
-    if df.empty:
-        return ["### ⚠️ No matching articles."] + [""] * 4
-
-    clusters = df.groupby("cluster_label")
-    markdown_blocks = []
-
-    for cluster_label, articles in clusters:
-        cluster_md = (
-            "<div style='"
-            "border:1px solid #252932;"
-            "border-radius:12px;"
-            "margin-bottom:20px;"
-            "padding:20px;"
-            "background:#13161b;"
-            "font-family:Inter,sans-serif;"
-            "'>"
-        )
-
-        # ── Cluster header ──
-        cluster_md += (
-            f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:14px;'>"
-            f"<span style='"
-            f"background:rgba(101,194,58,0.12);"
-            f"border:1px solid rgba(101,194,58,0.3);"
-            f"border-radius:6px;"
-            f"padding:3px 10px;"
-            f"font-size:0.68rem;"
-            f"font-weight:700;"
-            f"color:#65C23A;"
-            f"letter-spacing:0.1em;"
-            f"text-transform:uppercase;"
-            f"font-family:JetBrains Mono,monospace;"
-            f"'>CLUSTER</span>"
-            f"<span style='font-size:1rem;font-weight:600;color:#e8eaf0;'>{cluster_label}</span>"
-            f"</div>"
-        )
-
-        lda_topics = articles["lda_topics"].iloc[0] if "lda_topics" in articles else ""
-        if lda_topics:
-            cluster_md += (
-                f"<p style='margin:0 0 6px;font-size:0.82rem;'>"
-                f"<span style='color:#9aa0ad;font-weight:600;'>Main Themes: </span>"
-                f"<span style='color:#a3e87a;'>{lda_topics}</span>"
-                f"</p>"
-            )
-
-        primary = cluster_primary_topics.get(cluster_label, [])
-        if primary:
-            cluster_md += (
-                f"<p style='margin:0 0 6px;font-size:0.82rem;'>"
-                f"<span style='color:#9aa0ad;font-weight:600;'>Primary Topics: </span>"
-                f"<span style='color:#65C23A;'>{', '.join(primary)}</span>"
-                f"</p>"
-            )
-
-        related = cluster_related_topics.get(cluster_label, [])
-        if related:
-            cluster_md += (
-                f"<p style='margin:0 0 12px;font-size:0.82rem;'>"
-                f"<span style='color:#9aa0ad;font-weight:600;'>Related Topics: </span>"
-                f"<span style='color:#5a6270;'>{', '.join(related)}</span>"
-                f"</p>"
-            )
-
-        cluster_md += (
-            f"<p style='margin:0 0 14px;font-size:0.8rem;color:#9aa0ad;'>"
-            f"<span style='font-weight:600;color:#e8eaf0;'>{len(articles)}</span> articles</p>"
-        )
-
-        # ── Sentiment buckets ──
-        sentiment_cfg = {
-            "Positive": {
-                "bg":     "#0d1f0a",
-                "border": "#3a7d1e",
-                "label":  "Positive",
-                "dot":    "#65C23A",
-            },
-            "Neutral": {
-                "bg":     "#0e1520",
-                "border": "#2a5298",
-                "label":  "Neutral",
-                "dot":    "#4a7fa5",
-            },
-            "Negative": {
-                "bg":     "#1f0d0d",
-                "border": "#8b1a1a",
-                "label":  "Negative",
-                "dot":    "#c0392b",
-            },
-        }
-
-        for sentiment, cfg in sentiment_cfg.items():
-            sentiment_articles = articles[articles["sentiment"] == sentiment]
-            if sentiment_articles.empty:
-                continue
-
-            cluster_md += (
-                f"<div style='"
-                f"background:{cfg['bg']};"
-                f"border-left:3px solid {cfg['border']};"
-                f"border-radius:0 8px 8px 0;"
-                f"margin-bottom:12px;"
-                f"padding:12px 14px;"
-                f"'>"
-                f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:10px;'>"
-                f"<span style='width:7px;height:7px;border-radius:50%;background:{cfg['dot']};display:inline-block;'></span>"
-                f"<span style='font-size:0.78rem;font-weight:700;color:#e8eaf0;letter-spacing:0.04em;text-transform:uppercase;'>"
-                f"{cfg['label']} &nbsp;<span style='color:{cfg['dot']};'>({len(sentiment_articles)})</span>"
-                f"</span>"
-                f"</div>"
-            )
-
-            for _, article in sentiment_articles.iterrows():
-                # Score badge (mono)
-                score_val = article.get("score", None)
-                score_badge = ""
-                if score_val is not None:
-                    try:
-                        score_badge = (
-                            f"<span style='"
-                            f"font-family:JetBrains Mono,monospace;"
-                            f"font-size:0.7rem;"
-                            f"color:{cfg['dot']};"
-                            f"background:rgba(0,0,0,0.3);"
-                            f"border:1px solid {cfg['border']};"
-                            f"border-radius:4px;"
-                            f"padding:1px 7px;"
-                            f"margin-left:8px;"
-                            f"'>{float(score_val):.2f}</span>"
-                        )
-                    except (ValueError, TypeError):
-                        pass
-
-                cluster_md += (
-                    f"<div style='"
-                    f"margin:0 0 10px;"
-                    f"padding:10px 12px;"
-                    f"background:#13161b;"
-                    f"border:1px solid #252932;"
-                    f"border-radius:8px;"
-                    f"'>"
-                    f"<p style='margin:0 0 6px;font-size:0.88rem;font-weight:600;color:#e8eaf0;'>"
-                    f"📰 {article['title']}{score_badge}"
-                    f"</p>"
-                    f"<p style='margin:0 0 4px;font-size:0.78rem;color:#9aa0ad;'>"
-                    f"<span style='color:#5a6270;'>Source:</span> {article['source']}"
-                    f"</p>"
-                    f"<details style='margin:6px 0;'>"
-                    f"<summary style='cursor:pointer;font-size:0.78rem;font-weight:600;color:#65C23A;list-style:none;'>"
-                    f"▶ Summary"
-                    f"</summary>"
-                    f"<p style='margin:8px 0 0 12px;font-size:0.82rem;color:#9aa0ad;line-height:1.55;'>"
-                    f"{article['summary']}"
-                    f"</p>"
-                    f"</details>"
-                    f"<a href='{article['url']}' target='_blank' style='"
-                    f"font-size:0.78rem;"
-                    f"color:#65C23A;"
-                    f"text-decoration:none;"
-                    f"font-weight:500;"
-                    f"'>Read full article →</a>"
-                    f"</div>"
-                )
-
-            cluster_md += "</div>"  # close sentiment bucket
-
-        cluster_md += "</div>"  # close cluster card
-        markdown_blocks.append(cluster_md)
-
-    while len(markdown_blocks) < 5:
-        markdown_blocks.append("")
-
-    return markdown_blocks[:5]
-
-def save_clustered_articles(df, topic):
-    if df.empty:
-        return None, None
-    csv_file = f"{topic.replace(' ', '_')}_clustered_articles.csv"
-    df.to_csv(csv_file, index=False)
-    return csv_file, None
-
-def update_ui_with_columns(topic, urls, sentiment_filters):
-    extracted_articles = []
-
-    if topic and topic.strip():
-        return fetch_and_process_topic_news(topic, sentiment_filters)
-
-    if urls:
-        url_list = [url.strip() for url in urls.split("\n") if url.strip()]
-        extracted_articles.extend(extract_summarize_and_analyze_content_from_urls(url_list))
-
-    if not extracted_articles:
-        return sentiment_filters, "", "", "", "", "", None, None, None, gr.update(visible=False)
-
-    deduped_articles = deduplicate_articles(extracted_articles)
-    df = pd.DataFrame(deduped_articles)
-    result = cluster_news.cluster_and_label_articles(df, content_column="content", summary_column="summary")
-    cluster_md_blocks = display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters)
-    csv_file, _ = save_clustered_articles(result["dataframe"], topic or "batch_upload")
-    topic_fig = plot_topic_frequency(result)
-    sentiment_fig = plot_sentiment_trends(result)
-    top_clusters_table = render_top_clusters_table(result)
-    return sentiment_filters, *cluster_md_blocks, csv_file, topic_fig, sentiment_fig, top_clusters_table, gr.update(visible=True)
-
-def clear_interface():
-    return (
-        "",                                  # topic_input
-        ["Positive", "Neutral", "Negative"], # sentiment_filter
-        "",                                  # urls_input
-        "", "", "", "", "",                  # cluster columns 0–4
-        gr.update(value=None),               # csv_output (reset download file)
-        None, None, None,                    # topic_fig, sentiment_fig, top_clusters_table
-        gr.update(visible=False)             # Hide Clustered News Digest section
-    )
-
-
-# ── GRADIO UI ─────────────────────────────────────────────────────────────────
-
-_dark_theme = gr.themes.Base(
-    primary_hue=gr.themes.colors.green,
-    neutral_hue=gr.themes.colors.slate,
-).set(
-    body_background_fill="#0d0f12",
-    body_background_fill_dark="#0d0f12",
-    block_background_fill="#13161b",
-    block_background_fill_dark="#13161b",
-    block_border_color="#252932",
-    block_border_color_dark="#252932",
-    input_background_fill="#1a1e26",
-    input_background_fill_dark="#1a1e26",
-    input_border_color="#252932",
-    input_border_color_dark="#252932",
-    button_primary_background_fill="#65C23A",
-    button_primary_background_fill_dark="#65C23A",
-    button_primary_text_color="#0d0f12",
-    button_primary_text_color_dark="#0d0f12",
-    body_text_color="#e8eaf0",
-    body_text_color_dark="#e8eaf0",
-    body_text_color_subdued="#9aa0ad",
-    body_text_color_subdued_dark="#9aa0ad",
+# ── CSV export ────────────────────────────────────────────────────────────────
+csv_bytes = df.to_csv(index=False).encode("utf-8")
+topic_slug = (meta.get("topic") or "digest").replace(" ", "_")
+st.download_button(
+    label="📁 Download CSV",
+    data=csv_bytes,
+    file_name=f"{topic_slug}_quickpulse.csv",
+    mime="text/csv",
 )
 
-with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
+st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-    gr.Markdown(_HERO_HTML)
 
-    with gr.Row():
-        with gr.Column(scale=2):
-            topic_input = gr.Textbox(label="Enter Topic", placeholder="e.g. climate change")
-            sentiment_filter = gr.CheckboxGroup(
-                choices=["Positive", "Neutral", "Negative"],
-                value=["Positive", "Neutral", "Negative"],
-                label="Sentiment Filter",
-            )
-            with gr.Accordion("🔗 Enter Multiple URLs", open=False):
-                urls_input = gr.Textbox(label="Enter URLs (newline separated)", lines=4)
-            with gr.Row():
-                submit_button = gr.Button("Generate Digest", variant="primary", scale=1)
-                latest_news_button = gr.Button("Fetch Top News", variant="secondary", scale=1)
-                clear_button = gr.Button("Clear", variant="secondary", scale=1)
-            csv_output = gr.File(label="📁 Download Clustered Digest CSV")
-        with gr.Column(scale=3):
-            with gr.Row():
-                topic_fig = gr.Plot(label="Topic Frequency")
-                sentiment_fig = gr.Plot(label="Sentiment Trends")
-            top_clusters_table = gr.Dataframe(label="Top Clusters")
+# ── clustered digest ──────────────────────────────────────────────────────────
+st.markdown(f"<p style='color:{ACCENT};font-weight:700;font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:20px;'>Clustered News Digest</p>", unsafe_allow_html=True)
 
-    gr.Markdown("<hr style='border:none;border-top:1px solid #252932;margin:32px 0;'>")
+cluster_primary   = result.get("cluster_primary_topics", {})
+cluster_related   = result.get("cluster_related_topics", {})
 
-    clustered_digest_section = gr.Group(visible=False)
-    with clustered_digest_section:
-        gr.Markdown(
-            "<h3 style='"
-            "font-family:Inter,sans-serif;"
-            "font-size:0.72rem;"
-            "font-weight:700;"
-            "color:#65C23A;"
-            "letter-spacing:0.12em;"
-            "text-transform:uppercase;"
-            "margin:0 0 20px;"
-            "'>Clustered News Digest</h3>"
-        )
-        with gr.Row():
-            column_0 = gr.Markdown()
-            column_1 = gr.Markdown()
-            column_2 = gr.Markdown()
-            column_3 = gr.Markdown()
-            column_4 = gr.Markdown()
+if "cluster_label" not in df_filtered.columns or df_filtered.empty:
+    st.info("No articles match the selected sentiment filters.")
+    st.stop()
 
-    submit_button.click(
-        fn=update_ui_with_columns,
-        inputs=[topic_input, urls_input, sentiment_filter],
-        outputs=[
-            sentiment_filter,
-            column_0, column_1, column_2, column_3, column_4,
-            csv_output,
-            topic_fig, sentiment_fig, top_clusters_table,
-            clustered_digest_section,
-        ],
-    )
+clusters = df_filtered.groupby("cluster_label")
 
-    latest_news_button.click(
-        fn=fetch_and_process_latest_news,
-        inputs=[sentiment_filter],
-        outputs=[
-            sentiment_filter,
-            column_0, column_1, column_2, column_3, column_4,
-            csv_output,
-            topic_fig, sentiment_fig, top_clusters_table,
-            clustered_digest_section,
-        ],
-    )
+for cluster_label, articles in clusters:
+    cluster_id_str = str(articles["cluster_id"].iloc[0]) if "cluster_id" in articles.columns else cluster_label
+    primary = cluster_primary.get(cluster_id_str, cluster_primary.get(cluster_label, []))
+    related = cluster_related.get(cluster_id_str, cluster_related.get(cluster_label, []))
+    lda = articles["lda_topics"].iloc[0] if "lda_topics" in articles.columns else ""
 
-    clear_button.click(
-        fn=clear_interface,
-        inputs=[],
-        outputs=[
-            topic_input, sentiment_filter, urls_input,
-            column_0, column_1, column_2, column_3, column_4,
-            csv_output,
-            topic_fig, sentiment_fig, top_clusters_table,
-            clustered_digest_section,
-        ],
-    )
+    # Cluster card header
+    header_parts = []
+    if lda:
+        header_parts.append(f"<span style='color:#a3e87a;font-size:0.8rem;'>Themes: {lda}</span>")
+    if primary:
+        header_parts.append(f"<span style='color:{ACCENT};font-size:0.8rem;'>Primary: {', '.join(primary)}</span>")
+    if related:
+        header_parts.append(f"<span style='color:#5a6270;font-size:0.8rem;'>Related: {', '.join(related)}</span>")
 
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0")
+    header_html = "<br>".join(header_parts) if header_parts else ""
+
+    st.markdown(f"""
+    <div style="border:1px solid {BORDER};border-radius:12px;margin-bottom:20px;padding:20px;background:{BG_CARD};">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="background:rgba(101,194,58,0.12);border:1px solid rgba(101,194,58,0.3);border-radius:6px;padding:3px 10px;font-size:0.68rem;font-weight:700;color:{ACCENT};letter-spacing:0.1em;text-transform:uppercase;font-family:'JetBrains Mono',monospace;">CLUSTER</span>
+        <span style="font-size:1rem;font-weight:600;color:{TXT_PRI};">{cluster_label}</span>
+        <span style="font-size:0.78rem;color:{TXT_SEC};margin-left:auto;">{len(articles)} articles</span>
+      </div>
+      {header_html}
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Articles grouped by sentiment
+    for sentiment, cfg in SENTIMENT_CFG.items():
+        sent_articles = articles[articles["sentiment"] == sentiment]
+        if sent_articles.empty:
+            continue
+
+        st.markdown(f"""
+        <div style="background:{cfg['bg']};border-left:3px solid {cfg['border']};border-radius:0 8px 8px 0;margin-bottom:10px;padding:10px 14px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+            <span style="width:7px;height:7px;border-radius:50%;background:{cfg['dot']};display:inline-block;"></span>
+            <span style="font-size:0.78rem;font-weight:700;color:{TXT_PRI};letter-spacing:0.04em;text-transform:uppercase;">
+              {sentiment} <span style="color:{cfg['dot']};margin-left:4px;">({len(sent_articles)})</span>
+            </span>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        for _, art in sent_articles.iterrows():
+            score_val = art.get("score", None)
+            score_str = f"{float(score_val):.2f}" if score_val is not None else ""
+
+            with st.expander(f"📰 {art['title']}", expanded=False):
+                cols = st.columns([3, 1])
+                with cols[0]:
+                    st.markdown(f"<span style='color:{TXT_SEC};font-size:0.78rem;'>Source:</span> <span style='color:{TXT_PRI};font-size:0.78rem;'>{art['source']}</span>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='color:{TXT_SEC};font-size:0.82rem;line-height:1.55;margin-top:8px;'>{art['summary']}</p>", unsafe_allow_html=True)
+                    st.markdown(f"<a href='{art['url']}' target='_blank' style='color:{ACCENT};font-size:0.78rem;font-weight:500;text-decoration:none;'>Read full article →</a>", unsafe_allow_html=True)
+                with cols[1]:
+                    if score_str:
+                        st.markdown(f"<div style='text-align:right;font-family:JetBrains Mono,monospace;font-size:0.8rem;color:{cfg['dot']};background:rgba(0,0,0,0.3);border:1px solid {cfg['border']};border-radius:6px;padding:4px 8px;display:inline-block;'>{score_str}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='text-align:right;font-size:0.72rem;color:{TXT_SEC};margin-top:6px;'>{art.get('publishedAt','')[:10]}</p>", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)

@@ -1,33 +1,60 @@
 # summarizer.py
-# This script summarizes the content of each article of the specified topic using the Hugging Face Transformers library.
+# Summarizes article content using a fine-tuned FLAN-T5 model.
+# Model is loaded lazily on first call — keeps app startup instant.
 
-from transformers import pipeline
+_pipeline = None
 
-# Load summarization pipeline
-summarizer = pipeline("summarization", model="harao-ml/flant5-finetuned-summarize")
-#summarizer = pipeline("text-generation", model="harao-ml/flant5-finetuned-summarize")
 
-# Function to split text into smaller chunks
+def _get_pipeline():
+    global _pipeline
+    if _pipeline is None:
+        from transformers import pipeline
+        _pipeline = pipeline(
+            "summarization",
+            model="harao-ml/flant5-finetuned-summarize",
+        )
+    return _pipeline
+
+
 def split_text(text, max_tokens=512):
+    """Yield word-based chunks of up to max_tokens words."""
     words = text.split()
     for i in range(0, len(words), max_tokens):
-        yield ' '.join(words[i:i + max_tokens])
+        yield " ".join(words[i : i + max_tokens])
 
-# Function to clean text
+
 def clean_text(text):
-    text = ' '.join(text.split())
-    text = ' '.join(word for word in text.split() if len(word) < 100)
+    """Collapse whitespace and drop suspiciously long tokens (e.g. base64 blobs)."""
+    text = " ".join(text.split())
+    text = " ".join(word for word in text.split() if len(word) < 100)
     return text
 
-def generate_summary(content):
+
+def generate_summary(content: str) -> str:
+    """
+    Return a summary string for the given article content.
+    Falls back gracefully on any error so the pipeline never hard-crashes.
+    """
     try:
-        if not content.strip():
-                return "No input provided."
-        text = content
-        cleaned_text = clean_text(text)
-        chunks = list(split_text(cleaned_text))
-        cons_summary = ''.join([summarizer(chunk, do_sample=False)[0]['summary_text'] for chunk in chunks if chunk.strip()]) if chunks else ''
-        summary = summarizer(text, do_sample=False)[0]['summary_text']
-        return summary
+        if not content or not content.strip():
+            return "No content available."
+
+        summarizer = _get_pipeline()
+        cleaned = clean_text(content)
+        chunks = [c for c in split_text(cleaned) if c.strip()]
+
+        if not chunks:
+            return "No content available."
+
+        # BUG FIX: original code ran summarizer(chunk) per chunk AND then
+        # summarizer(text) on the full text — doubling inference time — then
+        # returned `summary` (the full-text result) while discarding `cons_summary`.
+        # We now do one pass over the chunks only.
+        parts = [
+            summarizer(chunk, do_sample=False)[0]["summary_text"]
+            for chunk in chunks
+        ]
+        return " ".join(parts)
+
     except Exception as e:
-        return f"Error generating summary: {str(e)}"
+        return f"Summary unavailable: {e}"

@@ -1,57 +1,74 @@
+# QuickPulse
+
+Live multi-source news aggregator with HDBSCAN clustering, FLAN-T5 summarisation, and zero-shot sentiment analysis.
+
 ---
-title: QuickPulse
-emoji: 🌍
-colorFrom: blue
-colorTo: green
-sdk: gradio
-sdk_version: 5.37.0
-app_file: app.py
-pinned: true
-short_description: News Stories in Context
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│  HF Docker Space                                │
+│                                                 │
+│  ┌─────────────┐     reads      ┌────────────┐  │
+│  │ Streamlit   │ ─────────────▶ │ cache/     │  │
+│  │ app.py      │                │ articles   │  │
+│  └─────────────┘                │ .json      │  │
+│                                 └─────┲──────┘  │
+│  ┌─────────────────────────────┐      ┃ writes  │
+│  │ APScheduler (every 30 min) │      ┃         │
+│  │ + on-demand button trigger  │──────┛         │
+│  └──────────────┬──────────────┘                │
+│                 │                               │
+│         pipeline.run()                          │
+│         gather → extract (parallel)             │
+│         → summarize → sentiment → cluster       │
+└─────────────────────────────────────────────────┘
+```
+
+**Key principle:** the Streamlit render path never blocks on an API call.  
+The background scheduler keeps the cache fresh; the UI reads it instantly.
+
 ---
-# Quick Pulse  
-### AI-Powered News Summarizer with Sentiment & Topic Clustering
 
-### Overview
+## Files changed vs original
 
-Quick Pulse is a powerful tool designed to provide summarized news articles with real-time sentiment analysis and topic clustering. Built with cutting-edge NLP techniques, it pulls articles from various sources, analyzes them for sentiment, clusters them based on topics, and provides a quick digest of the latest news trends and insights.
+| File | Change |
+|---|---|
+| `app.py` | Full rewrite — Gradio → Streamlit, cache-first render, scheduler bootstrap |
+| `summarizer.py` | Lazy model load; fixed redundant double-inference bug |
+| `analyze_sentiment.py` | Lazy model load |
+| `extract_news.py` | Sequential loop → `ThreadPoolExecutor` (parallel scraping) |
+| `pipeline.py` | **New** — orchestration layer; writes `cache/articles.json` |
+| `requirements.txt` | `gradio` → `streamlit`; added `apscheduler` |
+| `Dockerfile` | **New** — HF Docker Space config, port 7860 |
 
-### Features:
-Real-Time News Summarization: Automatically summarizes the latest articles.
+**Unchanged:** `gather_news.py`, `cluster_news.py`, `input_topic.py`
 
-Sentiment Analysis: Analyzes the emotional tone (positive, negative, or neutral) of the summarized content.
+---
 
-Topic Clustering: Groups similar articles based on detected topics for easy exploration.
+## Deployment
 
-### App Demo:
-You can interact with the Quick Pulse app directly on Hugging Face Spaces. It allows you to:
+1. In your HF Space settings, set **SDK → Docker**.
+2. Set the secret `api_key` to your NewsAPI key.
+3. Push this repo — HF will build the Docker image automatically.
+4. (Optional) Add a free UptimeRobot monitor pointing at  
+   `https://harao-ml-quickpulse.hf.space/` every 5 minutes to keep the Space warm.
 
-Enter a topic to fetch and summarize the latest news articles.
+---
 
-Upload text files for analysis and summarization.
+## Environment variables
 
-Enter URLs for specific articles to analyze.
+| Name | Description |
+|---|---|
+| `api_key` | NewsAPI.org API key |
 
-Download a CSV file of clustered articles for further analysis.
+---
 
-### How to Use:
-1. Fetch Latest News:
-Click on the Fetch & Summarize Top 10 Headlines button to retrieve the latest news articles related to top headlines.
+## Local development
 
-2. Enter a Custom Topic:
-Enter a specific topic (e.g., "climate change") in the input box to fetch and summarize articles related to that subject.
-
-3. Sentiment Filtering:
-Select the sentiment filter to focus on positive, neutral, or negative articles.
-
-4. Upload Text Files:
-Upload your own .txt files containing article content to be processed.
-
-5. Enter URLs:
-Provide a list of article URLs separated by newlines to extract and analyze their content.
-
-6. Download Results:
-After processing, you can download the clustered results as a CSV file, containing the articles grouped by their topics and sentiment.
-
-7. Clear All Inputs:
-Use the Clear button to reset the app and remove all inputs.
+```bash
+pip install -r requirements.txt
+export api_key=YOUR_NEWSAPI_KEY
+streamlit run app.py
+```

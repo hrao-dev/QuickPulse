@@ -1,24 +1,36 @@
 # analyze_sentiment.py
-# This script analyzes the sentiment of the summarized content using the Hugging Face Transformers library.
+# Zero-shot sentiment classification via facebook/bart-large-mnli.
+# Classifier is loaded lazily on first call — avoids blocking app startup.
 
-from transformers import pipeline
+_classifier = None
 
-# Load zero-shot classification pipeline
-classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
 
-def analyze_summary(summary):
+def _get_classifier():
+    global _classifier
+    if _classifier is None:
+        from transformers import pipeline
+        _classifier = pipeline(
+            "zero-shot-classification",
+            model="facebook/bart-large-mnli",
+        )
+    return _classifier
+
+
+def analyze_summary(summary: str):
     """
-    Analyze the sentiment of the given summary using zero-shot classification.
-    Returns a tuple of (sentiment, score).
+    Classify sentiment of a summary string.
+    Returns (sentiment: str, score: float).
     """
     try:
-        if not summary.strip():
-            return "No input provided.", 0.0
+        if not summary or not summary.strip():
+            return "Neutral", 0.0
 
+        classifier = _get_classifier()
         candidate_labels = ["positive", "neutral", "negative"]
         result = classifier(summary, candidate_labels)
-        sentiment = result['labels'][0].capitalize()
-        score = float(result['scores'][0])
+        sentiment = result["labels"][0].capitalize()
+        score = float(result["scores"][0])
         return sentiment, score
+
     except Exception as e:
-        return f"Error analyzing sentiment: {str(e)}", 0.0
+        return "Neutral", 0.0
