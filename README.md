@@ -1,3 +1,12 @@
+---
+title: QuickPulse
+emoji: ⚡
+colorFrom: green
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
 # QuickPulse
 
 Live multi-source news aggregator with HDBSCAN clustering, FLAN-T5 summarisation, and zero-shot sentiment analysis.
