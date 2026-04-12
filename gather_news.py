@@ -1,124 +1,100 @@
 # gather_news.py
-# News Source Integration
-# This script integrates with various news sources to fetch the latest articles from the specified news sources,
-# extracts relevant information such as title, URL, Source, Author and Publish date, and extracts full content.
+# Fetches headlines and snippets from NewsAPI.
+# KEY CHANGE from original: we no longer call extract_news_articles() to scrape
+# full article HTML. Instead we use the description/snippet NewsAPI already
+# returns. This eliminates 25-50 sequential HTTP fetches and is the single
+# biggest latency fix.
 
-import requests
 import os
-from extract_news import extract_news_articles, create_dataframe, save_to_csv
+import requests
 
-def fetch_newsapi_top_headlines(min_length=100, max_articles=25):
-    #import config
-    url = 'https://newsapi.org/v2/top-headlines'
+
+def fetch_newsapi_top_headlines(max_articles: int = 50) -> list[dict]:
+    """Return top headlines with title + snippet only (no full-text fetch)."""
     api_key = os.environ.get("api_key")
-    params = {
-        'apiKey': api_key,
-        'language': 'en',
-        'pageSize': max_articles
-    }
-    response = requests.get(url, params=params)
-    if response.status_code != 200:
-        print(f"Error: Failed to fetch news from NewsAPI Top Headlines. Status code: {response.status_code}")
+    if not api_key:
+        print("Warning: api_key env var not set.")
         return []
-    articles = response.json().get("articles", [])
-    if not articles:
-        print("No articles found in NewsAPI Top Headlines.")
-        return []
-    meta_by_url = {}
-    urls = []
-    for article in articles:
-        url = article.get("url", "#")
-        meta = {
-            "url": url,
-            "title": article.get("title", ""),
-            "source": article.get("source", {}).get("name", ""),
-            "author": article.get("author", "Unknown"),
-            "publishedAt": article.get("publishedAt", "Unknown"),
-        }
-        meta_by_url[url] = meta
-        urls.append(url)
-    print(f"Fetched {len(urls)} article URLs from NewsAPI Top Headlines.")
-    extracted_articles = extract_news_articles(urls, min_length=min_length)
-    merged_articles = []
-    for art in extracted_articles:
-        meta = meta_by_url.get(art.get("original_url"))
-        if not meta:
-            meta = {
-                "title": art.get("title", "Untitled"),
-                "source": "",
-                "author": "Unknown",
-                "publishedAt": "Unknown"
-            }
-        merged = {
-            "url": art.get("url"),
-            "title": art.get("title") if art.get("title") and art.get("title") != "Untitled" else meta["title"],
-            "source": meta["source"],
-            "author": meta["author"],
-            "publishedAt": meta["publishedAt"],
-            "text": art.get("text", ""),
-        }
-        merged_articles.append(merged)
-    print(f"Usable articles after extraction (NewsAPI Top Headlines): {len(merged_articles)}")
-    return merged_articles
 
-def fetch_newsapi_everything(topic, min_length=100, max_articles=50):
-    #import config
-    url = 'https://newsapi.org/v2/everything'
+    params = {
+        "apiKey": api_key,
+        "language": "en",
+        "pageSize": max_articles,
+    }
+    try:
+        response = requests.get(
+            "https://newsapi.org/v2/top-headlines", params=params, timeout=10
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error fetching top headlines: {e}")
+        return []
+
+    articles = response.json().get("articles", [])
+    return _normalize(articles)
+
+
+def fetch_newsapi_everything(topic: str, max_articles: int = 50) -> list[dict]:
+    """Return articles matching a topic with title + snippet only."""
     api_key = os.environ.get("api_key")
-    params = {
-        'apiKey': api_key,
-        'language': 'en',
-        'q': topic,
-        'pageSize': max_articles,
-        'sortBy': 'publishedAt'
-    }
-    response = requests.get(url, params=params)
-    if response.status_code != 200:
-        print(f"Error: Failed to fetch news from NewsAPI Everything. Status code: {response.status_code}")
+    if not api_key:
+        print("Warning: api_key env var not set.")
         return []
-    articles = response.json().get("articles", [])
-    if not articles:
-        print("No articles found in NewsAPI Everything.")
-        return []
-    meta_by_url = {}
-    urls = []
-    for article in articles:
-        url = article.get("url", "#")
-        meta = {
-            "url": url,
-            "title": article.get("title", ""),
-            "source": article.get("source", {}).get("name", ""),
-            "author": article.get("author", "Unknown"),
-            "publishedAt": article.get("publishedAt", "Unknown"),
-        }
-        meta_by_url[url] = meta
-        urls.append(url)
-    print(f"Fetched {len(urls)} article URLs from NewsAPI Everything.")
-    extracted_articles = extract_news_articles(urls, min_length=min_length)
-    merged_articles = []
-    for art in extracted_articles:
-        meta = meta_by_url.get(art.get("original_url"))
-        if not meta:
-            meta = {
-                "title": art.get("title", "Untitled"),
-                "source": "",
-                "author": "Unknown",
-                "publishedAt": "Unknown"
-            }
-        merged = {
-            "url": art.get("url"),
-            "title": art.get("title") if art.get("title") and art.get("title") != "Untitled" else meta["title"],
-            "source": meta["source"],
-            "author": meta["author"],
-            "publishedAt": meta["publishedAt"],
-            "text": art.get("text", ""),
-        }
-        merged_articles.append(merged)
-    print(f"Usable articles after extraction (NewsAPI Everything): {len(merged_articles)}")
-    return merged_articles
 
-def fetch_articles(topic=None, min_length=100, max_articles=25):
+    params = {
+        "apiKey": api_key,
+        "language": "en",
+        "q": topic,
+        "pageSize": max_articles,
+        "sortBy": "publishedAt",
+    }
+    try:
+        response = requests.get(
+            "https://newsapi.org/v2/everything", params=params, timeout=10
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error fetching topic news: {e}")
+        return []
+
+    articles = response.json().get("articles", [])
+    return _normalize(articles)
+
+
+def fetch_articles(topic: str | None = None, max_articles: int = 50) -> list[dict]:
+    """Unified entry point. Topic → /everything, no topic → /top-headlines."""
     if topic and topic.strip():
-        return fetch_newsapi_everything(topic, min_length=min_length, max_articles=max_articles)
-    else:
-        return fetch_newsapi_top_headlines(min_length=min_length, max_articles=max_articles)
+        return fetch_newsapi_everything(topic.strip(), max_articles=max_articles)
+    return fetch_newsapi_top_headlines(max_articles=max_articles)
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _normalize(raw_articles: list[dict]) -> list[dict]:
+    """
+    Map raw NewsAPI article dicts to the internal schema used by the rest of
+    the pipeline:
+        title, snippet, url, source, author, publishedAt
+    """
+    normalized = []
+    for art in raw_articles:
+        title = (art.get("title") or "").strip()
+        snippet = (art.get("description") or art.get("content") or "").strip()
+
+        # Skip placeholder entries NewsAPI sometimes returns
+        if not title or title == "[Removed]":
+            continue
+
+        normalized.append(
+            {
+                "title": title,
+                "snippet": snippet,
+                "url": art.get("url", "#"),
+                "source": art.get("source", {}).get("name", "Unknown"),
+                "author": art.get("author") or "Unknown",
+                "publishedAt": art.get("publishedAt") or "Unknown",
+            }
+        )
+
+    print(f"Fetched {len(normalized)} articles from NewsAPI.")
+    return normalized
