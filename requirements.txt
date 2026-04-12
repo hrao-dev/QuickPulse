@@ -1,21 +1,17 @@
-# requirements.txt — QuickPulse (refactored)
-# Removed: torch, transformers (heavy local models), tokenizers,
-#           hdbscan, umap-learn, sentence_transformers, newspaper3k, gradio
-# Added:   groq (Groq API client), streamlit
+# requirements.txt — QuickPulse (optimised)
+# Removed: torch, transformers, tokenizers, hdbscan, umap-learn,
+#           sentence_transformers, newspaper3k, gradio
+# No ML models loaded at all — classification is keyword-rule based.
 
 # Core data
 pandas
 numpy
-scikit-learn      # TF-IDF keyword extraction in cluster_news.py
-
-# NLP — zero-shot topic classifier only (no summarisation model)
-transformers<5    # facebook/bart-large-mnli for zero-shot classification
-torch             # required by transformers pipeline (CPU only is fine here)
+scikit-learn      # TF-IDF keyword extraction only
 
 # News fetching
 requests
 
-# LLM API
+# LLM synthesis
 groq
 
 # UI
