@@ -1,6 +1,5 @@
 ## QuickPulse — Gradio interface for news gathering, clustering, summarization and sentiment analysis.
 
-import asyncio
 import gather_news
 import pandas as pd
 import cluster_news
@@ -9,14 +8,6 @@ import analyze_sentiment
 import extract_news
 import gradio as gr
 import plotly.express as px
-
-# ── Fix Python 3.13 asyncio cleanup noise (ValueError: Invalid file descriptor: -1) ──
-try:
-    loop = asyncio.get_event_loop()
-    if loop.is_closed():
-        asyncio.set_event_loop(asyncio.new_event_loop())
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
 
 # ── DARK THEME TOKENS ──────────────────────────────────────────────────────────
 _DARK_CSS = """
@@ -155,6 +146,31 @@ _HERO_HTML = """
 </div>
 """
 
+# ── DARK THEME ────────────────────────────────────────────────────────────────
+_dark_theme = gr.themes.Base(
+    primary_hue=gr.themes.colors.green,
+    neutral_hue=gr.themes.colors.slate,
+).set(
+    body_background_fill="#0d0f12",
+    body_background_fill_dark="#0d0f12",
+    block_background_fill="#13161b",
+    block_background_fill_dark="#13161b",
+    block_border_color="#252932",
+    block_border_color_dark="#252932",
+    input_background_fill="#1a1e26",
+    input_background_fill_dark="#1a1e26",
+    input_border_color="#252932",
+    input_border_color_dark="#252932",
+    button_primary_background_fill="#65C23A",
+    button_primary_background_fill_dark="#65C23A",
+    button_primary_text_color="#0d0f12",
+    button_primary_text_color_dark="#0d0f12",
+    body_text_color="#e8eaf0",
+    body_text_color_dark="#e8eaf0",
+    body_text_color_subdued="#9aa0ad",
+    body_text_color_subdued_dark="#9aa0ad",
+)
+
 
 # ── CHART HELPERS ─────────────────────────────────────────────────────────────
 
@@ -204,7 +220,8 @@ def plot_sentiment_trends(result):
         height=350, paper_bgcolor="#13161b",
         font=dict(family="Inter, sans-serif", color="#9aa0ad", size=12),
         title_font=dict(color="#e8eaf0", size=14, family="Inter, sans-serif"),
-        legend=dict(bgcolor="#1a1e26", bordercolor="#252932", borderwidth=1, font=dict(color="#9aa0ad", size=11)),
+        legend=dict(bgcolor="#1a1e26", bordercolor="#252932", borderwidth=1,
+                    font=dict(color="#9aa0ad", size=11)),
         margin=dict(l=16, r=16, t=44, b=16),
     )
     return fig
@@ -439,31 +456,7 @@ def clear_interface():
 
 # ── GRADIO UI ─────────────────────────────────────────────────────────────────
 
-_dark_theme = gr.themes.Base(
-    primary_hue=gr.themes.colors.green,
-    neutral_hue=gr.themes.colors.slate,
-).set(
-    body_background_fill="#0d0f12",
-    body_background_fill_dark="#0d0f12",
-    block_background_fill="#13161b",
-    block_background_fill_dark="#13161b",
-    block_border_color="#252932",
-    block_border_color_dark="#252932",
-    input_background_fill="#1a1e26",
-    input_background_fill_dark="#1a1e26",
-    input_border_color="#252932",
-    input_border_color_dark="#252932",
-    button_primary_background_fill="#65C23A",
-    button_primary_background_fill_dark="#65C23A",
-    button_primary_text_color="#0d0f12",
-    button_primary_text_color_dark="#0d0f12",
-    body_text_color="#e8eaf0",
-    body_text_color_dark="#e8eaf0",
-    body_text_color_subdued="#9aa0ad",
-    body_text_color_subdued_dark="#9aa0ad",
-)
-
-with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
+with gr.Blocks() as demo:
 
     gr.HTML(_HERO_HTML)
 
@@ -523,4 +516,9 @@ with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0")
+    demo.launch(
+        server_name="0.0.0.0",
+        theme=_dark_theme,
+        css=_DARK_CSS,
+        ssr_mode=False,
+    )
