@@ -679,8 +679,9 @@ _dark_theme = gr.themes.Base(
     body_text_color_subdued_dark="#9aa0ad",
 )
 
-with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
+with gr.Blocks() as demo:
 
+    demo.launch(theme=_dark_theme, css=_DARK_CSS)
     gr.Markdown(_HERO_HTML)
 
     with gr.Row():
