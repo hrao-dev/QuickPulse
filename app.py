@@ -593,37 +593,30 @@ def fetch_top_news(sentiment_filters: list[str]) -> tuple:
     return process_and_render("", sentiment_filters)
 
 
-def refilter(
-    topic: str,
-    sentiment_filters: list[str],
-    *_cached,
-) -> tuple:
-    """
-    Re-render topic cards with new sentiment filters WITHOUT re-fetching.
-    Reads from briefing cache directly.
-    """
-    cached = briefing_module._load_cache()
-    if not cached:
-        # Nothing cached yet — run the full pipeline
+def refilter(topic: str, sentiment_filters: list[str], *_cached) -> tuple:
+    try:
+        cache_file = Path("cache.json")
+        if not cache_file.exists():
+            return process_and_render(topic, sentiment_filters)
+        
+        import json, time
+        data = json.loads(cache_file.read_text())
+        age = time.time() - data.get("timestamp", 0)
+        if age > 3600:  # stale
+            return process_and_render(topic, sentiment_filters)
+        
+        divergence_result = data.get("divergence", {})
+        cards = render_topic_cards(data, divergence_result, sentiment_filters)
+        
+        return (
+            sentiment_filters,
+            cards[0], cards[1], cards[2], cards[3], cards[4], cards[5],
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(),
+            gr.update(visible=True),
+        )
+    except Exception:
         return process_and_render(topic, sentiment_filters)
-
-    # We need divergence from the last run — try loading it from the cache
-    # (divergence is stored alongside briefing in cache.json if we put it there,
-    #  otherwise fall back to empty)
-    divergence_result = cached.get("divergence", {})
-
-    cards = render_topic_cards(cached, divergence_result, sentiment_filters)
-
-    return (
-        sentiment_filters,
-        cards[0], cards[1], cards[2], cards[3], cards[4], cards[5],
-        gr.update(),   # keep existing charts
-        gr.update(),
-        gr.update(),
-        gr.update(),
-        gr.update(),
-        gr.update(visible=True),
-    )
 
 
 def clear_all() -> tuple:
