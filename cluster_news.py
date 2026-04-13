@@ -1,16 +1,8 @@
 # cluster_news.py
-# FAST topic classification — no model loading, no API calls.
-#
-# Uses a keyword-rule approach: for each article we score it against
-# keyword lists for each topic and assign the highest-scoring bucket.
-# This runs in milliseconds for 50 articles vs 5-10 min for bart-large-mnli.
-#
-# TF-IDF keyword extraction is kept for the chips shown on briefing cards.
 
 from collections import defaultdict
-
 import numpy as np
-import pandas as pd
+from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 TOPIC_LABELS = [
@@ -22,100 +14,126 @@ TOPIC_LABELS = [
     "Environment & Climate",
 ]
 
-_TOPIC_KEYWORDS: dict[str, list[str]] = {
+# 8-10 representative sentences per topic.
+# These get averaged into a single prototype vector.
+_TOPIC_SEEDS = {
     "Artificial Intelligence": [
-        "ai", "artificial intelligence", "machine learning", "deep learning",
-        "llm", "large language model", "gpt", "chatgpt", "openai", "anthropic",
-        "gemini", "claude", "copilot", "neural network", "generative ai",
-        "diffusion model", "transformer", "nlp", "computer vision", "automation",
-        "robot", "robotics", "algorithm", "model training", "inference",
-        "nvidia", "gpu", "agi", "agent", "multimodal",
+        "OpenAI released a new large language model with improved reasoning.",
+        "Researchers trained a neural network on multimodal data.",
+        "The AI startup raised funding to develop generative models.",
+        "Machine learning algorithms are being used to automate decision making.",
+        "Anthropic announced Claude, a new AI assistant built on constitutional AI.",
+        "Deep learning models achieved state of the art on computer vision benchmarks.",
+        "GPU demand is surging as AI model training requires more compute.",
+        "Robotics companies are integrating large language models into physical agents.",
     ],
     "Business & Finance": [
-        "stock", "market", "economy", "inflation", "interest rate", "fed",
-        "federal reserve", "gdp", "recession", "earnings", "revenue", "profit",
-        "ipo", "acquisition", "merger", "startup", "venture capital", "funding",
-        "investment", "investor", "nasdaq", "s&p", "dow jones", "crypto",
-        "bitcoin", "ethereum", "bank", "finance", "financial", "trade",
-        "tariff", "export", "import", "supply chain", "ceo", "quarterly",
-        "wall street", "hedge fund", "bond", "treasury", "dollar",
+        "The Federal Reserve raised interest rates to combat inflation.",
+        "The company reported record quarterly earnings beating analyst expectations.",
+        "Venture capital funding for startups dropped sharply this quarter.",
+        "The S&P 500 fell two percent amid recession fears.",
+        "Merger talks between the two tech giants collapsed over antitrust concerns.",
+        "Bitcoin surged to a new all-time high as institutional investors piled in.",
+        "Supply chain disruptions are driving up costs for manufacturers.",
+        "The IPO raised three billion dollars in its market debut.",
     ],
     "Politics & World Affairs": [
-        "election", "president", "prime minister", "congress", "senate",
-        "parliament", "government", "policy", "legislation", "bill", "law",
-        "war", "conflict", "military", "nato", "un", "united nations",
-        "sanctions", "diplomacy", "treaty", "vote", "campaign", "democrat",
-        "republican", "political", "minister", "white house", "kremlin",
-        "ukraine", "russia", "china", "israel", "gaza", "taiwan", "iran",
-        "north korea", "eu", "european union", "protest", "coup", "summit",
+        "The president signed the legislation after it passed both chambers.",
+        "NATO allies pledged additional military support to Ukraine.",
+        "Tensions between China and Taiwan escalated after military exercises.",
+        "The election results were disputed as opposition parties demanded a recount.",
+        "Sanctions were imposed on Iran following nuclear program developments.",
+        "The prime minister announced early elections amid a political crisis.",
+        "United Nations peacekeepers deployed to the conflict zone.",
+        "Diplomatic talks between the two nations broke down over territorial disputes.",
     ],
     "Science & Technology": [
-        "research", "study", "scientist", "discovery", "space", "nasa",
-        "spacex", "rocket", "satellite", "quantum", "physics", "biology",
-        "chemistry", "experiment", "lab", "breakthrough", "innovation",
-        "semiconductor", "chip", "apple", "google", "microsoft", "meta",
-        "amazon", "software", "hardware", "cybersecurity", "hack", "data",
-        "cloud", "5g", "broadband", "internet", "app", "smartphone",
-        "telescope", "astronomy", "genome", "crispr", "biotech",
+        "NASA's James Webb telescope captured images of a distant galaxy.",
+        "Researchers at CERN made a breakthrough in quantum physics.",
+        "A new CRISPR technique could eliminate inherited genetic diseases.",
+        "SpaceX successfully launched and landed its reusable rocket.",
+        "The semiconductor shortage is easing as new chip fabs come online.",
+        "Cybersecurity researchers discovered a critical vulnerability in widely used software.",
+        "A clinical study found a new biomarker for early cancer detection.",
+        "The quantum computer solved an optimization problem in seconds.",
     ],
     "Health & Medicine": [
-        "health", "medicine", "medical", "hospital", "doctor", "patient",
-        "treatment", "drug", "vaccine", "cancer", "disease", "virus",
-        "pandemic", "fda", "clinical trial", "surgery", "diagnosis",
-        "mental health", "therapy", "pharmaceutical", "pfizer", "moderna",
-        "obesity", "diabetes", "alzheimer", "heart", "stroke", "covid",
-        "outbreak", "epidemic", "nutrition", "fitness", "wellness",
-        "healthcare", "insurance", "medicare", "medicaid",
+        "The FDA approved a new drug for treatment-resistant depression.",
+        "A clinical trial showed the vaccine was highly effective against the virus.",
+        "Obesity rates continue to rise driven by ultra-processed food consumption.",
+        "Researchers identified a genetic mutation linked to Alzheimer's disease.",
+        "The hospital system announced a merger to reduce costs and expand access.",
+        "Mental health crisis services are overwhelmed following the pandemic.",
+        "A new surgical technique reduced recovery time for hip replacements.",
+        "Pfizer reported positive phase three results for its cancer therapy.",
     ],
     "Environment & Climate": [
-        "climate", "climate change", "global warming", "carbon", "emissions",
-        "renewable energy", "solar", "wind energy", "electric vehicle", "ev",
-        "tesla", "fossil fuel", "oil", "gas", "coal", "pollution",
-        "environment", "sustainability", "biodiversity", "species", "ocean",
-        "wildfire", "flood", "drought", "hurricane", "deforestation",
-        "paris agreement", "cop", "greenhouse", "methane", "recycling",
-        "plastic", "water", "conservation", "glacier", "sea level",
+        "Global carbon emissions reached a record high despite climate pledges.",
+        "Wildfires devastated millions of acres across California and Australia.",
+        "The offshore wind farm will power half a million homes.",
+        "Scientists warned that Arctic sea ice is melting faster than projected.",
+        "Electric vehicle sales surpassed internal combustion engines in Norway.",
+        "The COP summit ended with a deal to phase out fossil fuel subsidies.",
+        "Plastic pollution in the ocean has reached catastrophic levels.",
+        "Drought conditions across the midwest are threatening crop yields.",
     ],
 }
 
-_TOPIC_PATTERNS: dict[str, list[str]] = {
-    topic: [kw.lower() for kw in kws]
-    for topic, kws in _TOPIC_KEYWORDS.items()
-}
+# Load model once — all-MiniLM-L6-v2 is ~80MB, fast on CPU
+_model = SentenceTransformer("all-MiniLM-L6-v2")
 
+def _build_prototypes() -> dict[str, np.ndarray]:
+    """Average seed embeddings into one prototype vector per topic."""
+    prototypes = {}
+    for topic, seeds in _TOPIC_SEEDS.items():
+        embeddings = _model.encode(seeds, normalize_embeddings=True)
+        prototypes[topic] = embeddings.mean(axis=0)
+        # Re-normalize the mean vector
+        norm = np.linalg.norm(prototypes[topic])
+        if norm > 0:
+            prototypes[topic] /= norm
+    return prototypes
 
-def _score_text(text: str) -> dict[str, int]:
-    text_lower = text.lower()
-    return {
-        topic: sum(1 for kw in keywords if kw in text_lower)
-        for topic, keywords in _TOPIC_PATTERNS.items()
-    }
+# Built once at import time
+_PROTOTYPES = _build_prototypes()
 
+def _cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
+    """Dot product of two normalized vectors = cosine similarity."""
+    return float(np.dot(vec_a, vec_b))
 
 def classify_articles(articles: list[dict]) -> list[dict]:
     """
-    Assign each article a 'topic' by scoring title+snippet against keyword lists.
-    Runs in <100ms for 50 articles. No model loading.
+    Classify each article by cosine similarity to topic prototype embeddings.
+    Falls back to 'Other' if max similarity is below 0.25.
     """
-    for article in articles:
-        text = f"{article.get('title', '')} {article.get('snippet', '')}".strip()
-        scores = _score_text(text)
+    texts = [
+        f"{a.get('title', '')} {a.get('snippet', '')}".strip()
+        for a in articles
+    ]
+    # Batch encode — much faster than one at a time
+    embeddings = _model.encode(texts, normalize_embeddings=True, batch_size=32)
+
+    for article, emb in zip(articles, embeddings):
+        scores = {
+            topic: _cosine_similarity(emb, proto)
+            for topic, proto in _PROTOTYPES.items()
+        }
         best_topic = max(scores, key=lambda t: scores[t])
         best_score = scores[best_topic]
-        article["topic"] = best_topic if best_score > 0 else "Other"
-        article["topic_score"] = best_score
+
+        article["topic"] = best_topic if best_score >= 0.25 else "Other"
+        article["topic_score"] = round(best_score, 4)
+        article["topic_scores"] = {t: round(s, 4) for t, s in scores.items()}
     return articles
 
-
 def extract_keywords(texts: list[str], top_n: int = 5) -> list[str]:
+    # unchanged — TF-IDF still fine for keyword chips
     if not texts:
         return []
     try:
-        vectorizer = TfidfVectorizer(
-            ngram_range=(1, 2),
-            stop_words="english",
-            max_features=200,
-        )
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        import numpy as np
+        vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words="english", max_features=200)
         matrix = vectorizer.fit_transform(texts)
         avg_scores = np.asarray(matrix.mean(axis=0)).flatten()
         top_indices = avg_scores.argsort()[::-1][:top_n]
@@ -123,15 +141,11 @@ def extract_keywords(texts: list[str], top_n: int = 5) -> list[str]:
     except ValueError:
         return []
 
-
 def group_by_topic(articles: list[dict]) -> dict[str, list[dict]]:
-    buckets: dict[str, list[dict]] = defaultdict(list)
+    from collections import defaultdict
+    buckets = defaultdict(list)
     for article in articles:
         topic = article.get("topic", "Other")
         if topic in TOPIC_LABELS:
             buckets[topic].append(article)
     return dict(buckets)
-
-
-def build_topic_dataframe(articles: list[dict]) -> pd.DataFrame:
-    return pd.DataFrame(articles)
