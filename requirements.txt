@@ -24,3 +24,11 @@ nltk
 sentence-transformers>=2.7.0
 spacy>=3.7.0
 # then run: python -m spacy download en_core_web_sm
+
+gradio
+requests
+pandas
+plotly
+groq
+sentence-transformers
+spacy
