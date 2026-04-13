@@ -9,16 +9,13 @@ from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics.pairwise import cosine_distances
 from sklearn.decomposition import LatentDirichletAllocation
-from sklearn.cluster import KMeans
 import hdbscan
 import umap
-
 
 def generate_embeddings(df, content_column):
     model = SentenceTransformer('all-MiniLM-L6-v2')
     embeddings = model.encode(df[content_column].tolist(), show_progress_bar=True)
     return np.array(embeddings)
-
 
 def reduce_dimensions(embeddings, n_neighbors=10, min_dist=0.0, n_components=5, random_state=42):
     n_samples = embeddings.shape[0]
@@ -37,7 +34,6 @@ def reduce_dimensions(embeddings, n_neighbors=10, min_dist=0.0, n_components=5, 
     reduced = reducer.fit_transform(embeddings)
     return reduced
 
-
 def cluster_with_hdbscan(embeddings, min_cluster_size=2, min_samples=1):
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,
@@ -46,14 +42,6 @@ def cluster_with_hdbscan(embeddings, min_cluster_size=2, min_samples=1):
     )
     labels = clusterer.fit_predict(embeddings)
     return labels, clusterer
-
-
-def cluster_with_kmeans(embeddings, n_clusters):
-    """Fallback clustering when HDBSCAN assigns everything to noise."""
-    km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    labels = km.fit_predict(embeddings)
-    return labels
-
 
 def extract_tfidf_labels(df, content_column, cluster_labels, top_n=6):
     grouped = defaultdict(list)
@@ -74,7 +62,6 @@ def extract_tfidf_labels(df, content_column, cluster_labels, top_n=6):
         tfidf_labels[cluster_id] = top_terms
     return tfidf_labels
 
-
 def lda_topic_modeling(texts, n_topics=1, n_words=6):
     vectorizer = CountVectorizer(stop_words='english', ngram_range=(1, 2), max_features=1000)
     X = vectorizer.fit_transform(texts)
@@ -89,16 +76,13 @@ def lda_topic_modeling(texts, n_topics=1, n_words=6):
         topic_words.extend(words)
     return topic_words
 
-
 def get_representative_summary(df, cluster_indices, embeddings, centroid):
     cluster_embs = embeddings[cluster_indices]
     dists = cosine_distances(cluster_embs, centroid.reshape(1, -1)).flatten()
     min_idx = np.argmin(dists)
     return df.iloc[cluster_indices[min_idx]]["summary"]
 
-
-def label_clusters_hybrid(df, content_column, summary_column, cluster_labels, embeddings,
-                           tfidf_labels, lda_labels, vague_threshold=15):
+def label_clusters_hybrid(df, content_column, summary_column, cluster_labels, embeddings, tfidf_labels, lda_labels, vague_threshold=15):
     cluster_label_map = {}
     cluster_primary_topics = {}
     cluster_related_topics = {}
@@ -120,7 +104,6 @@ def label_clusters_hybrid(df, content_column, summary_column, cluster_labels, em
         cluster_related_topics[cluster_id] = related_topics
     return cluster_label_map, cluster_primary_topics, cluster_related_topics
 
-
 def cluster_and_label_articles(
     df,
     content_column="content",
@@ -138,7 +121,6 @@ def cluster_and_label_articles(
     if df.empty:
         return None
 
-    # Reset index so positional iloc and boolean indexing stay in sync.
     df = df.reset_index(drop=True)
 
     min_cluster_size = max(2, min(min_cluster_size, len(df) // 2)) if len(df) < 20 else min_cluster_size
@@ -146,37 +128,26 @@ def cluster_and_label_articles(
     embeddings = generate_embeddings(df, content_column)
     reduced_embeddings = reduce_dimensions(embeddings, n_neighbors, min_dist, n_components)
     cluster_labels, clusterer = cluster_with_hdbscan(reduced_embeddings, min_cluster_size, min_samples)
-
-    # BUG FIX: HDBSCAN sometimes marks *all* points as noise (-1) when there are
-    # too few articles or the embeddings are too spread out. Fall back to K-Means
-    # so the UI always shows useful clusters instead of everything as "Noise/Other".
-    unique_non_noise = [l for l in set(cluster_labels) if l != -1]
-    if not unique_non_noise:
-        fallback_k = min(3, max(1, len(df) // 2))
-        print(f"HDBSCAN found no clusters; falling back to KMeans(k={fallback_k}).")
-        cluster_labels = cluster_with_kmeans(reduced_embeddings, n_clusters=fallback_k)
-
     df['cluster_id'] = cluster_labels
 
     tfidf_labels = extract_tfidf_labels(df, content_column, cluster_labels, top_n=top_n)
 
-    # BUG FIX: use df[df['cluster_id'] == cluster_id] instead of
-    # df[cluster_labels == cluster_id] — the latter uses a raw NumPy boolean array
-    # which misaligns when df has a non-default integer index after deduplication.
     lda_labels = {}
     for cluster_id in set(cluster_labels):
         if cluster_id == -1:
             continue
-        cluster_texts = df[df['cluster_id'] == cluster_id][content_column].tolist()
+        # FIX: use pandas boolean mask on the DataFrame column, not numpy array indexing
+        cluster_texts = df.loc[df['cluster_id'] == cluster_id, content_column].tolist()
         if cluster_texts:
-            topics = lda_topic_modeling(cluster_texts, n_topics=lda_n_topics, n_words=lda_n_words)
+            topics = lda_topic_modeling(
+                cluster_texts, n_topics=lda_n_topics, n_words=lda_n_words
+            )
             lda_labels[cluster_id] = topics
         else:
             lda_labels[cluster_id] = []
 
     cluster_label_map, cluster_primary_topics, cluster_related_topics = label_clusters_hybrid(
-        df, content_column, summary_column, cluster_labels, embeddings,
-        tfidf_labels, lda_labels, vague_threshold=vague_threshold
+        df, content_column, summary_column, cluster_labels, embeddings, tfidf_labels, lda_labels, vague_threshold=vague_threshold
     )
 
     df['cluster_label'] = [

@@ -1,14 +1,28 @@
 # analyze_sentiment.py
-# This file is kept only for backward-compatibility if anything imports it.
-# Sentiment analysis is now handled inside briefing.py as part of the Groq
-# synthesis call (one call per topic returns briefing + sentiment + entities).
-# The heavy facebook/bart-large-mnli zero-shot pipeline is no longer loaded
-# here — it is used only in cluster_news.py for topic classification.
+# This script analyzes the sentiment of the summarized content using the Hugging Face Transformers library.
 
-def analyze_summary(summary: str) -> tuple[str, float]:
+from transformers import pipeline
+
+# Load zero-shot classification pipeline
+classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+
+def analyze_summary(summary):
     """
-    DEPRECATED — sentiment is now returned by briefing.generate_briefing().
-    This stub exists so any legacy import doesn't break.
-    Returns ('Neutral', 0.0) as a safe default.
+    Analyze the sentiment of the given summary using zero-shot classification.
+    Returns a tuple of (sentiment, score).
     """
-    return "Neutral", 0.0
+    try:
+        if not summary or not summary.strip():
+            return "Neutral", 0.0
+
+        # Guard against error strings passed in from summarizer
+        if summary.startswith("Error") or summary.startswith("No "):
+            return "Neutral", 0.0
+
+        candidate_labels = ["positive", "neutral", "negative"]
+        result = classifier(summary, candidate_labels, truncation=True)
+        sentiment = result['labels'][0].capitalize()
+        score = float(result['scores'][0])
+        return sentiment, score
+    except Exception as e:
+        return "Neutral", 0.0

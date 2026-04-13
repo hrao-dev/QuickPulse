@@ -1,15 +1,17 @@
-# requirements.txt — QuickPulse dependencies
+# requirements.txt file to install app dependencies
 pandas
 transformers<5
-tokenizers<0.16
-torch>=2.1,<2.3
-hdbscan==0.8.33
-nltk==3.8.1
-scikit-learn==1.4.2
-numpy<2
+tokenizers
+torch
+newspaper4k
+nltk
+scikit-learn
+numpy
 requests
 gradio
 lxml_html_clean
 plotly
-umap-learn==0.5.5
-sentence_transformers==2.6.1
+hdbscan
+umap-learn
+sentence_transformers
+accelerate

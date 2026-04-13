@@ -1,23 +1,21 @@
 # gather_news.py
 # News Source Integration
-# Fetches latest articles from NewsAPI, extracts metadata, and pulls full content.
+# This script integrates with various news sources to fetch the latest articles from the specified news sources,
+# extracts relevant information such as title, URL, Source, Author and Publish date, and extracts full content.
 
 import requests
 import os
-#from extract_news import extract_news_articles, create_dataframe, save_to_csv
-
+from extract_news import extract_news_articles, create_dataframe, save_to_csv
 
 def fetch_newsapi_top_headlines(min_length=100, max_articles=25):
-    # BUG FIX: renamed the endpoint string variable from `url` to `endpoint` so it
-    # is not overwritten by the `url = article.get("url", "#")` loop variable below.
-    endpoint = 'https://newsapi.org/v2/top-headlines'
+    api_url = 'https://newsapi.org/v2/top-headlines'
     api_key = os.environ.get("api_key")
     params = {
         'apiKey': api_key,
         'language': 'en',
         'pageSize': max_articles
     }
-    response = requests.get(endpoint, params=params)
+    response = requests.get(api_url, params=params)
     if response.status_code != 200:
         print(f"Error: Failed to fetch news from NewsAPI Top Headlines. Status code: {response.status_code}")
         return []
@@ -25,24 +23,21 @@ def fetch_newsapi_top_headlines(min_length=100, max_articles=25):
     if not articles:
         print("No articles found in NewsAPI Top Headlines.")
         return []
-
     meta_by_url = {}
     urls = []
     for article in articles:
-        url = article.get("url", "#")
+        article_url = article.get("url", "#")
         meta = {
-            "url": url,
+            "url": article_url,
             "title": article.get("title", ""),
             "source": article.get("source", {}).get("name", ""),
             "author": article.get("author", "Unknown"),
             "publishedAt": article.get("publishedAt", "Unknown"),
         }
-        meta_by_url[url] = meta
-        urls.append(url)
-
+        meta_by_url[article_url] = meta
+        urls.append(article_url)
     print(f"Fetched {len(urls)} article URLs from NewsAPI Top Headlines.")
     extracted_articles = extract_news_articles(urls, min_length=min_length)
-
     merged_articles = []
     for art in extracted_articles:
         meta = meta_by_url.get(art.get("original_url"))
@@ -62,14 +57,11 @@ def fetch_newsapi_top_headlines(min_length=100, max_articles=25):
             "text": art.get("text", ""),
         }
         merged_articles.append(merged)
-
     print(f"Usable articles after extraction (NewsAPI Top Headlines): {len(merged_articles)}")
     return merged_articles
 
-
 def fetch_newsapi_everything(topic, min_length=100, max_articles=50):
-    # BUG FIX: same variable-shadowing fix as above — renamed endpoint string.
-    endpoint = 'https://newsapi.org/v2/everything'
+    api_url = 'https://newsapi.org/v2/everything'
     api_key = os.environ.get("api_key")
     params = {
         'apiKey': api_key,
@@ -78,7 +70,7 @@ def fetch_newsapi_everything(topic, min_length=100, max_articles=50):
         'pageSize': max_articles,
         'sortBy': 'publishedAt'
     }
-    response = requests.get(endpoint, params=params)
+    response = requests.get(api_url, params=params)
     if response.status_code != 200:
         print(f"Error: Failed to fetch news from NewsAPI Everything. Status code: {response.status_code}")
         return []
@@ -86,24 +78,21 @@ def fetch_newsapi_everything(topic, min_length=100, max_articles=50):
     if not articles:
         print("No articles found in NewsAPI Everything.")
         return []
-
     meta_by_url = {}
     urls = []
     for article in articles:
-        url = article.get("url", "#")
+        article_url = article.get("url", "#")
         meta = {
-            "url": url,
+            "url": article_url,
             "title": article.get("title", ""),
             "source": article.get("source", {}).get("name", ""),
             "author": article.get("author", "Unknown"),
             "publishedAt": article.get("publishedAt", "Unknown"),
         }
-        meta_by_url[url] = meta
-        urls.append(url)
-
+        meta_by_url[article_url] = meta
+        urls.append(article_url)
     print(f"Fetched {len(urls)} article URLs from NewsAPI Everything.")
     extracted_articles = extract_news_articles(urls, min_length=min_length)
-
     merged_articles = []
     for art in extracted_articles:
         meta = meta_by_url.get(art.get("original_url"))
@@ -123,10 +112,8 @@ def fetch_newsapi_everything(topic, min_length=100, max_articles=50):
             "text": art.get("text", ""),
         }
         merged_articles.append(merged)
-
     print(f"Usable articles after extraction (NewsAPI Everything): {len(merged_articles)}")
     return merged_articles
-
 
 def fetch_articles(topic=None, min_length=100, max_articles=25):
     if topic and topic.strip():

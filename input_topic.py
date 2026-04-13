@@ -8,7 +8,7 @@ def get_topic():
         return None
     if len(topic) > 100:  # Arbitrary limit for topic length
         print("Topic is too long. Please enter a shorter topic.")
-        return None 
+        return None
     if not topic.isascii():
         print("Topic contains non-ASCII characters. Please use only ASCII characters.")
         return None
@@ -43,5 +43,3 @@ def get_topic():
         return None
 
     return topic
-
-

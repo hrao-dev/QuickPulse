@@ -1,13 +1,36 @@
 # extract_news.py
-# Slimmed down from the original.
-# Full-article scraping (newspaper3k) is removed — we no longer need it because
-# gather_news.py uses NewsAPI snippets directly.
-# save_to_csv() is removed — CSV export is no longer a feature.
-# create_dataframe() is kept for any downstream code that needs a DataFrame.
+# This script extracts full content from news articles using the newspaper4k library.
 
+import logging
 import pandas as pd
+from newspaper import Article
 
+def extract_full_content(url, min_length=100):
+    try:
+        article = Article(url)
+        article.download()
+        article.parse()
+        text = article.text.strip()
+        title = article.title.strip() if article.title else "Untitled"
+        if len(text) < min_length:
+            logging.warning(f"Extracted content is too short from {url}.")
+            return None
+        return {"url": url, "text": text, "title": title}
+    except Exception as e:
+        logging.error(f"Failed to extract content from {url}: {str(e)}")
+        return None
 
-def create_dataframe(articles: list[dict]) -> pd.DataFrame:
-    """Convert a list of article dicts to a DataFrame."""
+def extract_news_articles(urls, min_length=100):
+    extracted_articles = []
+    for url in urls:
+        article = extract_full_content(url, min_length=min_length)
+        if article and article.get("text"):
+            article["original_url"] = url
+            extracted_articles.append(article)
+    return extracted_articles
+
+def create_dataframe(articles):
     return pd.DataFrame(articles)
+
+def save_to_csv(df, filename):
+    df.to_csv(filename, index=False)
