@@ -1,33 +1,16 @@
-# requirements.txt — QuickPulse (optimised)
-# Removed: torch, transformers, tokenizers, hdbscan, umap-learn,
-#           sentence_transformers, newspaper3k, gradio
-# No ML models loaded at all — classification is keyword-rule based.
-
-# Core data
+# requirements.txt — QuickPulse dependencies
 pandas
-numpy
-scikit-learn      # TF-IDF keyword extraction only
-
-# News fetching
-requests
-
-# LLM synthesis
-groq
-
-# UI
-streamlit
-plotly
-
-# Utilities
+transformers<5
+tokenizers
+torch
+newspaper3k
 nltk
-
-sentence-transformers>=2.7.0
-spacy>=3.7.0
-# then run: python -m spacy download en_core_web_sm
-
-gradio
+scikit-learn
+numpy
 requests
-pandas
-groq
-sentence-transformers
-spacy
+gradio
+lxml_html_clean
+plotly
+hdbscan
+umap-learn
+sentence_transformers

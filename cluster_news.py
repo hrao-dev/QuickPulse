@@ -1,151 +1,203 @@
 # cluster_news.py
+# Clusters news articles using HDBSCAN, labels clusters with TF-IDF n-grams and LDA topics,
+# and falls back to a representative summary if the label is too vague.
 
-from collections import defaultdict
 import numpy as np
+import pandas as pd
+from collections import defaultdict
 from sentence_transformers import SentenceTransformer
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.metrics.pairwise import cosine_distances
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.cluster import KMeans
+import hdbscan
+import umap
 
-TOPIC_LABELS = [
-    "Artificial Intelligence",
-    "Business & Finance",
-    "Politics & World Affairs",
-    "Science & Technology",
-    "Health & Medicine",
-    "Environment & Climate",
-]
 
-# 8-10 representative sentences per topic.
-# These get averaged into a single prototype vector.
-_TOPIC_SEEDS = {
-    "Artificial Intelligence": [
-        "OpenAI released a new large language model with improved reasoning.",
-        "Researchers trained a neural network on multimodal data.",
-        "The AI startup raised funding to develop generative models.",
-        "Machine learning algorithms are being used to automate decision making.",
-        "Anthropic announced Claude, a new AI assistant built on constitutional AI.",
-        "Deep learning models achieved state of the art on computer vision benchmarks.",
-        "GPU demand is surging as AI model training requires more compute.",
-        "Robotics companies are integrating large language models into physical agents.",
-    ],
-    "Business & Finance": [
-        "The Federal Reserve raised interest rates to combat inflation.",
-        "The company reported record quarterly earnings beating analyst expectations.",
-        "Venture capital funding for startups dropped sharply this quarter.",
-        "The S&P 500 fell two percent amid recession fears.",
-        "Merger talks between the two tech giants collapsed over antitrust concerns.",
-        "Bitcoin surged to a new all-time high as institutional investors piled in.",
-        "Supply chain disruptions are driving up costs for manufacturers.",
-        "The IPO raised three billion dollars in its market debut.",
-    ],
-    "Politics & World Affairs": [
-        "The president signed the legislation after it passed both chambers.",
-        "NATO allies pledged additional military support to Ukraine.",
-        "Tensions between China and Taiwan escalated after military exercises.",
-        "The election results were disputed as opposition parties demanded a recount.",
-        "Sanctions were imposed on Iran following nuclear program developments.",
-        "The prime minister announced early elections amid a political crisis.",
-        "United Nations peacekeepers deployed to the conflict zone.",
-        "Diplomatic talks between the two nations broke down over territorial disputes.",
-    ],
-    "Science & Technology": [
-        "NASA's James Webb telescope captured images of a distant galaxy.",
-        "Researchers at CERN made a breakthrough in quantum physics.",
-        "A new CRISPR technique could eliminate inherited genetic diseases.",
-        "SpaceX successfully launched and landed its reusable rocket.",
-        "The semiconductor shortage is easing as new chip fabs come online.",
-        "Cybersecurity researchers discovered a critical vulnerability in widely used software.",
-        "A clinical study found a new biomarker for early cancer detection.",
-        "The quantum computer solved an optimization problem in seconds.",
-    ],
-    "Health & Medicine": [
-        "The FDA approved a new drug for treatment-resistant depression.",
-        "A clinical trial showed the vaccine was highly effective against the virus.",
-        "Obesity rates continue to rise driven by ultra-processed food consumption.",
-        "Researchers identified a genetic mutation linked to Alzheimer's disease.",
-        "The hospital system announced a merger to reduce costs and expand access.",
-        "Mental health crisis services are overwhelmed following the pandemic.",
-        "A new surgical technique reduced recovery time for hip replacements.",
-        "Pfizer reported positive phase three results for its cancer therapy.",
-    ],
-    "Environment & Climate": [
-        "Global carbon emissions reached a record high despite climate pledges.",
-        "Wildfires devastated millions of acres across California and Australia.",
-        "The offshore wind farm will power half a million homes.",
-        "Scientists warned that Arctic sea ice is melting faster than projected.",
-        "Electric vehicle sales surpassed internal combustion engines in Norway.",
-        "The COP summit ended with a deal to phase out fossil fuel subsidies.",
-        "Plastic pollution in the ocean has reached catastrophic levels.",
-        "Drought conditions across the midwest are threatening crop yields.",
-    ],
-}
+def generate_embeddings(df, content_column):
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    embeddings = model.encode(df[content_column].tolist(), show_progress_bar=True)
+    return np.array(embeddings)
 
-# Load model once — all-MiniLM-L6-v2 is ~80MB, fast on CPU
-_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-def _build_prototypes() -> dict[str, np.ndarray]:
-    """Average seed embeddings into one prototype vector per topic."""
-    prototypes = {}
-    for topic, seeds in _TOPIC_SEEDS.items():
-        embeddings = _model.encode(seeds, normalize_embeddings=True)
-        prototypes[topic] = embeddings.mean(axis=0)
-        # Re-normalize the mean vector
-        norm = np.linalg.norm(prototypes[topic])
-        if norm > 0:
-            prototypes[topic] /= norm
-    return prototypes
+def reduce_dimensions(embeddings, n_neighbors=10, min_dist=0.0, n_components=5, random_state=42):
+    n_samples = embeddings.shape[0]
+    if n_samples < 3:
+        return embeddings
+    n_components = min(max(2, n_components), n_samples - 2)
+    n_neighbors = min(max(2, n_neighbors), n_samples - 1)
+    reducer = umap.UMAP(
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        n_components=n_components,
+        random_state=random_state,
+        n_jobs=1,
+        metric='cosine'
+    )
+    reduced = reducer.fit_transform(embeddings)
+    return reduced
 
-# Built once at import time
-_PROTOTYPES = _build_prototypes()
 
-def _cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
-    """Dot product of two normalized vectors = cosine similarity."""
-    return float(np.dot(vec_a, vec_b))
+def cluster_with_hdbscan(embeddings, min_cluster_size=2, min_samples=1):
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        metric='euclidean'
+    )
+    labels = clusterer.fit_predict(embeddings)
+    return labels, clusterer
 
-def classify_articles(articles: list[dict]) -> list[dict]:
-    """
-    Classify each article by cosine similarity to topic prototype embeddings.
-    Falls back to 'Other' if max similarity is below 0.25.
-    """
-    texts = [
-        f"{a.get('title', '')} {a.get('snippet', '')}".strip()
-        for a in articles
+
+def cluster_with_kmeans(embeddings, n_clusters):
+    """Fallback clustering when HDBSCAN assigns everything to noise."""
+    km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    labels = km.fit_predict(embeddings)
+    return labels
+
+
+def extract_tfidf_labels(df, content_column, cluster_labels, top_n=6):
+    grouped = defaultdict(list)
+    for idx, label in enumerate(cluster_labels):
+        if label == -1:
+            continue
+        grouped[label].append(df.iloc[idx][content_column])
+    tfidf_labels = {}
+    for cluster_id, texts in grouped.items():
+        vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words="english", max_features=50)
+        tfidf_matrix = vectorizer.fit_transform(texts)
+        avg_tfidf = tfidf_matrix.mean(axis=0).A1
+        if len(avg_tfidf) == 0:
+            tfidf_labels[cluster_id] = []
+            continue
+        top_indices = np.argsort(avg_tfidf)[::-1][:top_n]
+        top_terms = [vectorizer.get_feature_names_out()[i] for i in top_indices]
+        tfidf_labels[cluster_id] = top_terms
+    return tfidf_labels
+
+
+def lda_topic_modeling(texts, n_topics=1, n_words=6):
+    vectorizer = CountVectorizer(stop_words='english', ngram_range=(1, 2), max_features=1000)
+    X = vectorizer.fit_transform(texts)
+    if X.shape[0] < n_topics:
+        n_topics = max(1, X.shape[0])
+    lda = LatentDirichletAllocation(n_components=n_topics, random_state=42)
+    lda.fit(X)
+    topic_words = []
+    for topic_idx, topic in enumerate(lda.components_):
+        top_indices = topic.argsort()[:-n_words - 1:-1]
+        words = [vectorizer.get_feature_names_out()[i] for i in top_indices]
+        topic_words.extend(words)
+    return topic_words
+
+
+def get_representative_summary(df, cluster_indices, embeddings, centroid):
+    cluster_embs = embeddings[cluster_indices]
+    dists = cosine_distances(cluster_embs, centroid.reshape(1, -1)).flatten()
+    min_idx = np.argmin(dists)
+    return df.iloc[cluster_indices[min_idx]]["summary"]
+
+
+def label_clusters_hybrid(df, content_column, summary_column, cluster_labels, embeddings,
+                           tfidf_labels, lda_labels, vague_threshold=15):
+    cluster_label_map = {}
+    cluster_primary_topics = {}
+    cluster_related_topics = {}
+    for cluster_id in set(cluster_labels):
+        if cluster_id == -1:
+            continue
+        topics = lda_labels.get(cluster_id, []) or tfidf_labels.get(cluster_id, [])
+        topics = [t for t in topics if t]
+        primary_topics = topics[:3]
+        related_topics = topics[3:]
+        label = ", ".join(primary_topics) if primary_topics else ""
+        if not label or len(label) < vague_threshold:
+            cluster_indices = np.where(cluster_labels == cluster_id)[0]
+            centroid = embeddings[cluster_indices].mean(axis=0)
+            rep_summary = get_representative_summary(df, cluster_indices, embeddings, centroid)
+            label = rep_summary[:80] + "..." if len(rep_summary) > 80 else rep_summary
+        cluster_label_map[cluster_id] = label
+        cluster_primary_topics[cluster_id] = primary_topics
+        cluster_related_topics[cluster_id] = related_topics
+    return cluster_label_map, cluster_primary_topics, cluster_related_topics
+
+
+def cluster_and_label_articles(
+    df,
+    content_column="content",
+    summary_column="summary",
+    min_cluster_size=2,
+    min_samples=1,
+    n_neighbors=10,
+    min_dist=0.0,
+    n_components=5,
+    top_n=6,
+    lda_n_topics=1,
+    lda_n_words=6,
+    vague_threshold=15
+):
+    if df.empty:
+        return None
+
+    # Reset index so positional iloc and boolean indexing stay in sync.
+    df = df.reset_index(drop=True)
+
+    min_cluster_size = max(2, min(min_cluster_size, len(df) // 2)) if len(df) < 20 else min_cluster_size
+
+    embeddings = generate_embeddings(df, content_column)
+    reduced_embeddings = reduce_dimensions(embeddings, n_neighbors, min_dist, n_components)
+    cluster_labels, clusterer = cluster_with_hdbscan(reduced_embeddings, min_cluster_size, min_samples)
+
+    # BUG FIX: HDBSCAN sometimes marks *all* points as noise (-1) when there are
+    # too few articles or the embeddings are too spread out. Fall back to K-Means
+    # so the UI always shows useful clusters instead of everything as "Noise/Other".
+    unique_non_noise = [l for l in set(cluster_labels) if l != -1]
+    if not unique_non_noise:
+        fallback_k = min(3, max(1, len(df) // 2))
+        print(f"HDBSCAN found no clusters; falling back to KMeans(k={fallback_k}).")
+        cluster_labels = cluster_with_kmeans(reduced_embeddings, n_clusters=fallback_k)
+
+    df['cluster_id'] = cluster_labels
+
+    tfidf_labels = extract_tfidf_labels(df, content_column, cluster_labels, top_n=top_n)
+
+    # BUG FIX: use df[df['cluster_id'] == cluster_id] instead of
+    # df[cluster_labels == cluster_id] — the latter uses a raw NumPy boolean array
+    # which misaligns when df has a non-default integer index after deduplication.
+    lda_labels = {}
+    for cluster_id in set(cluster_labels):
+        if cluster_id == -1:
+            continue
+        cluster_texts = df[df['cluster_id'] == cluster_id][content_column].tolist()
+        if cluster_texts:
+            topics = lda_topic_modeling(cluster_texts, n_topics=lda_n_topics, n_words=lda_n_words)
+            lda_labels[cluster_id] = topics
+        else:
+            lda_labels[cluster_id] = []
+
+    cluster_label_map, cluster_primary_topics, cluster_related_topics = label_clusters_hybrid(
+        df, content_column, summary_column, cluster_labels, embeddings,
+        tfidf_labels, lda_labels, vague_threshold=vague_threshold
+    )
+
+    df['cluster_label'] = [
+        cluster_label_map.get(cid, "Noise/Other") if cid != -1 else "Noise/Other"
+        for cid in cluster_labels
     ]
-    # Batch encode — much faster than one at a time
-    embeddings = _model.encode(texts, normalize_embeddings=True, batch_size=32)
+    df['lda_topics'] = [
+        ", ".join(lda_labels.get(cid, [])) if cid != -1 else "" for cid in cluster_labels
+    ]
 
-    for article, emb in zip(articles, embeddings):
-        scores = {
-            topic: _cosine_similarity(emb, proto)
-            for topic, proto in _PROTOTYPES.items()
+    detected_topics = {
+        label: {
+            "size": int((df['cluster_label'] == label).sum())
         }
-        best_topic = max(scores, key=lambda t: scores[t])
-        best_score = scores[best_topic]
+        for label in set(df['cluster_label']) if label != "Noise/Other"
+    }
 
-        article["topic"] = best_topic if best_score >= 0.25 else "Other"
-        article["topic_score"] = round(best_score, 4)
-        article["topic_scores"] = {t: round(s, 4) for t, s in scores.items()}
-    return articles
-
-def extract_keywords(texts: list[str], top_n: int = 5) -> list[str]:
-    # unchanged — TF-IDF still fine for keyword chips
-    if not texts:
-        return []
-    try:
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        import numpy as np
-        vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words="english", max_features=200)
-        matrix = vectorizer.fit_transform(texts)
-        avg_scores = np.asarray(matrix.mean(axis=0)).flatten()
-        top_indices = avg_scores.argsort()[::-1][:top_n]
-        return [vectorizer.get_feature_names_out()[i] for i in top_indices]
-    except ValueError:
-        return []
-
-def group_by_topic(articles: list[dict]) -> dict[str, list[dict]]:
-    from collections import defaultdict
-    buckets = defaultdict(list)
-    for article in articles:
-        topic = article.get("topic", "Other")
-        if topic in TOPIC_LABELS:
-            buckets[topic].append(article)
-    return dict(buckets)
+    return {
+        "dataframe": df,
+        "detected_topics": detected_topics,
+        "number_of_clusters": len(detected_topics),
+        "cluster_primary_topics": cluster_primary_topics,
+        "cluster_related_topics": cluster_related_topics
+    }

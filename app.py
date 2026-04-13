@@ -10,7 +10,7 @@ import extract_news
 import gradio as gr
 import plotly.express as px
 
-# ── DARK THEME TOKENS ────────────────────────────────────────────────────────
+# ── DARK THEME TOKENS ──────────────────────────────────────────────────────────
 # bg_base      #0d0f12   deepest surface
 # bg_card      #13161b   card / panel surface
 # bg_elevated  #1a1e26   hover / raised surface
@@ -18,7 +18,7 @@ import plotly.express as px
 # accent       #65C23A   QuickPulse green
 # accent_dim   #4a9129   muted green
 # txt_primary  #e8eaf0   headings
-# txt_secondary #9aa0ad  body / labels
+# txt_secondary#9aa0ad   body / labels
 # pos_bg       #0d1f0a   positive tint
 # pos_border   #3a7d1e   positive border
 # neu_bg       #0e1520   neutral tint
@@ -206,8 +206,6 @@ html,
 }
 """
 
-# FIX #1: Use gr.HTML() for the hero block, not gr.Markdown().
-# gr.Markdown() sanitizes HTML and strips classes/animations.
 _HERO_HTML = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -308,7 +306,8 @@ def render_top_clusters_table(result, top_n=5):
     df = result["dataframe"]
     cluster_counts = df["cluster_label"].value_counts().reset_index()
     cluster_counts.columns = ["Cluster", "Articles"]
-    return cluster_counts.head(top_n)
+    top_clusters = cluster_counts.head(top_n)
+    return top_clusters
 
 
 def fetch_and_process_latest_news(sentiment_filters):
@@ -321,28 +320,54 @@ def fetch_and_process_topic_news(topic, sentiment_filters):
     return process_and_display_articles(articles, sentiment_filters, topic or "Topic")
 
 
+# BUG FIX: counted all outputs in both return paths — the Gradio outputs list
+# expects exactly 11 values:
+#   sentiment_filter, col0, col1, col2, col3, col4,
+#   csv_output, topic_fig, sentiment_fig, top_clusters_table, clustered_digest_section
+# The early-return paths previously returned 10 (missing the visible update), causing
+# a Gradio callback mismatch that silently broke the UI.
+_EMPTY_RESULT = (
+    [],           # sentiment_filter reset (no-op but keeps count consistent)
+    "", "", "", "", "",  # columns 0-4
+    None,         # csv_output
+    None,         # topic_fig
+    None,         # sentiment_fig
+    None,         # top_clusters_table
+    gr.update(visible=False),  # clustered_digest_section
+)
+
+
 def process_and_display_articles(articles, sentiment_filters, topic_label):
-    # FIX #2: All early-return paths now include None for top_clusters_table (11 values total)
     if not articles:
-        return sentiment_filters, "", "", "", "", "", None, None, None, None, gr.update(visible=False)
+        return _EMPTY_RESULT
 
     articles = sorted(articles, key=lambda x: x.get("publishedAt", ""), reverse=True)
     extracted_articles = extract_summarize_and_analyze_articles(articles)
     deduped_articles = deduplicate_articles(extracted_articles)
-
     if not deduped_articles:
-        return sentiment_filters, "", "", "", "", "", None, None, None, None, gr.update(visible=False)
+        return _EMPTY_RESULT
 
     df = pd.DataFrame(deduped_articles)
     result = cluster_news.cluster_and_label_articles(df, content_column="content", summary_column="summary")
+    if result is None:
+        return _EMPTY_RESULT
+
     cluster_md_blocks = display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters)
     csv_file, _ = save_clustered_articles(result["dataframe"], topic_label)
 
-    topic_fig        = plot_topic_frequency(result)
-    sentiment_fig    = plot_sentiment_trends(result)
+    topic_fig = plot_topic_frequency(result)
+    sentiment_fig = plot_sentiment_trends(result)
     top_clusters_table = render_top_clusters_table(result)
 
-    return sentiment_filters, *cluster_md_blocks, csv_file, topic_fig, sentiment_fig, top_clusters_table, gr.update(visible=True)
+    return (
+        sentiment_filters,
+        *cluster_md_blocks,
+        csv_file,
+        topic_fig,
+        sentiment_fig,
+        top_clusters_table,
+        gr.update(visible=True),
+    )
 
 
 def extract_summarize_and_analyze_articles(articles):
@@ -363,34 +388,34 @@ def extract_summarize_and_analyze_articles(articles):
             "content":     content,
             "summary":     summary,
             "sentiment":   sentiment,
-            "score":       score,
+            "score":       score
         })
     return extracted_articles
 
 
 def deduplicate_articles(articles):
-    seen_urls          = set()
-    seen_title_source  = set()
+    seen_urls = set()
+    seen_title_source = set()
     seen_title_summary = set()
     deduped = []
     for art in articles:
-        url     = art.get("url")
-        title   = art.get("title",   "").strip().lower()
-        source  = art.get("source",  "").strip().lower()
+        url = art.get("url")
+        title = art.get("title", "").strip().lower()
+        source = art.get("source", "").strip().lower()
         summary = art.get("summary", "").strip().lower()
-        key_ts  = (title, source)
-        key_tsu = (title, summary)
+        key_title_source = (title, source)
+        key_title_summary = (title, summary)
         if url and url in seen_urls:
             continue
-        if key_ts in seen_title_source:
+        if key_title_source in seen_title_source:
             continue
-        if key_tsu in seen_title_summary:
+        if key_title_summary in seen_title_summary:
             continue
         deduped.append(art)
         if url:
             seen_urls.add(url)
-        seen_title_source.add(key_ts)
-        seen_title_summary.add(key_tsu)
+        seen_title_source.add(key_title_source)
+        seen_title_summary.add(key_title_summary)
     return deduped
 
 
@@ -426,7 +451,6 @@ def display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters=N
             "'>"
         )
 
-        # ── Cluster header ──
         cluster_md += (
             f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:14px;'>"
             f"<span style='"
@@ -477,7 +501,6 @@ def display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters=N
             f"<span style='font-weight:600;color:#e8eaf0;'>{len(articles)}</span> articles</p>"
         )
 
-        # ── Sentiment buckets ──
         sentiment_cfg = {
             "Positive": {"bg": "#0d1f0a", "border": "#3a7d1e", "label": "Positive", "dot": "#65C23A"},
             "Neutral":  {"bg": "#0e1520", "border": "#2a5298", "label": "Neutral",  "dot": "#4a7fa5"},
@@ -506,7 +529,7 @@ def display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters=N
             )
 
             for _, article in sentiment_articles.iterrows():
-                score_val   = article.get("score", None)
+                score_val = article.get("score", None)
                 score_badge = ""
                 if score_val is not None:
                     try:
@@ -568,11 +591,19 @@ def display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters=N
 
 
 def save_clustered_articles(df, topic):
+    """
+    BUG FIX: write the CSV to /tmp so it is writable on HF Spaces and return
+    the full absolute path — gr.File needs an absolute path to serve the download.
+    Previously the file was written to CWD with a bare filename, which is
+    read-only on HF Spaces and caused the download button to silently fail.
+    """
     if df.empty:
         return None, None
-    csv_file = f"{topic.replace(' ', '_')}_clustered_articles.csv"
-    df.to_csv(csv_file, index=False)
-    return csv_file, None
+    import os
+    filename = f"{topic.replace(' ', '_')}_clustered_articles.csv"
+    csv_path = os.path.join("/tmp", filename)
+    df.to_csv(csv_path, index=False)
+    return csv_path, None
 
 
 def update_ui_with_columns(topic, urls, sentiment_filters):
@@ -585,30 +616,40 @@ def update_ui_with_columns(topic, urls, sentiment_filters):
         url_list = [url.strip() for url in urls.split("\n") if url.strip()]
         extracted_articles.extend(extract_summarize_and_analyze_content_from_urls(url_list))
 
-    # FIX #2 (continued): early-return here also needs 11 values
     if not extracted_articles:
-        return sentiment_filters, "", "", "", "", "", None, None, None, None, gr.update(visible=False)
+        return _EMPTY_RESULT
 
-    deduped_articles   = deduplicate_articles(extracted_articles)
-    df                 = pd.DataFrame(deduped_articles)
-    result             = cluster_news.cluster_and_label_articles(df, content_column="content", summary_column="summary")
-    cluster_md_blocks  = display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters)
-    csv_file, _        = save_clustered_articles(result["dataframe"], topic or "batch_upload")
-    topic_fig          = plot_topic_frequency(result)
-    sentiment_fig      = plot_sentiment_trends(result)
+    deduped_articles = deduplicate_articles(extracted_articles)
+    df = pd.DataFrame(deduped_articles)
+    result = cluster_news.cluster_and_label_articles(df, content_column="content", summary_column="summary")
+    if result is None:
+        return _EMPTY_RESULT
+
+    cluster_md_blocks = display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters)
+    csv_file, _ = save_clustered_articles(result["dataframe"], topic or "batch_upload")
+    topic_fig = plot_topic_frequency(result)
+    sentiment_fig = plot_sentiment_trends(result)
     top_clusters_table = render_top_clusters_table(result)
-    return sentiment_filters, *cluster_md_blocks, csv_file, topic_fig, sentiment_fig, top_clusters_table, gr.update(visible=True)
+    return (
+        sentiment_filters,
+        *cluster_md_blocks,
+        csv_file,
+        topic_fig,
+        sentiment_fig,
+        top_clusters_table,
+        gr.update(visible=True),
+    )
 
 
 def clear_interface():
     return (
-        "",                                    # topic_input
-        ["Positive", "Neutral", "Negative"],   # sentiment_filter
-        "",                                    # urls_input
-        "", "", "", "", "",                    # cluster columns 0-4
-        gr.update(value=None),                 # csv_output
-        None, None, None,                      # topic_fig, sentiment_fig, top_clusters_table
-        gr.update(visible=False),              # clustered_digest_section
+        "",                                   # topic_input
+        ["Positive", "Neutral", "Negative"],  # sentiment_filter
+        "",                                   # urls_input
+        "", "", "", "", "",                   # cluster columns 0-4
+        gr.update(value=None),                # csv_output
+        None, None, None,                     # topic_fig, sentiment_fig, top_clusters_table
+        gr.update(visible=False),             # hide Clustered News Digest section
     )
 
 
@@ -640,9 +681,7 @@ _dark_theme = gr.themes.Base(
 
 with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
 
-    # FIX #1: gr.HTML() renders raw HTML without sanitization
-    # gr.Markdown() strips class attributes and breaks the pulse animation
-    gr.HTML(_HERO_HTML)
+    gr.Markdown(_HERO_HTML)
 
     with gr.Row():
         with gr.Column(scale=2):
@@ -655,22 +694,21 @@ with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
             with gr.Accordion("🔗 Enter Multiple URLs", open=False):
                 urls_input = gr.Textbox(label="Enter URLs (newline separated)", lines=4)
             with gr.Row():
-                submit_button      = gr.Button("Generate Digest",        variant="primary",   scale=1)
-                latest_news_button = gr.Button("Fetch Top News",         variant="secondary", scale=1)
-                clear_button       = gr.Button("Clear",                  variant="secondary", scale=1)
+                submit_button = gr.Button("Generate Digest", variant="primary", scale=1)
+                latest_news_button = gr.Button("Fetch Top News", variant="secondary", scale=1)
+                clear_button = gr.Button("Clear", variant="secondary", scale=1)
             csv_output = gr.File(label="📁 Download Clustered Digest CSV")
-
         with gr.Column(scale=3):
             with gr.Row():
-                topic_fig     = gr.Plot(label="Topic Frequency")
+                topic_fig = gr.Plot(label="Topic Frequency")
                 sentiment_fig = gr.Plot(label="Sentiment Trends")
             top_clusters_table = gr.Dataframe(label="Top Clusters")
 
-    gr.HTML("<hr style='border:none;border-top:1px solid #252932;margin:32px 0;'>")
+    gr.Markdown("<hr style='border:none;border-top:1px solid #252932;margin:32px 0;'>")
 
     clustered_digest_section = gr.Group(visible=False)
     with clustered_digest_section:
-        gr.HTML(
+        gr.Markdown(
             "<h3 style='"
             "font-family:Inter,sans-serif;"
             "font-size:0.72rem;"
@@ -682,14 +720,13 @@ with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
             "'>Clustered News Digest</h3>"
         )
         with gr.Row():
-            column_0 = gr.HTML()
-            column_1 = gr.HTML()
-            column_2 = gr.HTML()
-            column_3 = gr.HTML()
-            column_4 = gr.HTML()
+            column_0 = gr.Markdown()
+            column_1 = gr.Markdown()
+            column_2 = gr.Markdown()
+            column_3 = gr.Markdown()
+            column_4 = gr.Markdown()
 
-    # ── Wire buttons ──────────────────────────────────────────────────────────
-    _outputs = [
+    _OUTPUTS = [
         sentiment_filter,
         column_0, column_1, column_2, column_3, column_4,
         csv_output,
@@ -697,28 +734,12 @@ with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
         clustered_digest_section,
     ]
 
-    submit_button.click(
-        fn=update_ui_with_columns,
-        inputs=[topic_input, urls_input, sentiment_filter],
-        outputs=_outputs,
-    )
-
-    latest_news_button.click(
-        fn=fetch_and_process_latest_news,
-        inputs=[sentiment_filter],
-        outputs=_outputs,
-    )
-
+    submit_button.click(fn=update_ui_with_columns, inputs=[topic_input, urls_input, sentiment_filter], outputs=_OUTPUTS)
+    latest_news_button.click(fn=fetch_and_process_latest_news, inputs=[sentiment_filter], outputs=_OUTPUTS)
     clear_button.click(
         fn=clear_interface,
         inputs=[],
-        outputs=[
-            topic_input, sentiment_filter, urls_input,
-            column_0, column_1, column_2, column_3, column_4,
-            csv_output,
-            topic_fig, sentiment_fig, top_clusters_table,
-            clustered_digest_section,
-        ],
+        outputs=[topic_input, sentiment_filter, urls_input] + _OUTPUTS[1:],
     )
 
 if __name__ == "__main__":
