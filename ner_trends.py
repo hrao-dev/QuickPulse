@@ -2,7 +2,13 @@
 
 from collections import Counter, defaultdict
 from typing import Optional
-import spacy
+import subprocess, sys
+try:
+    import spacy
+    spacy.load("en_core_web_sm")
+except (ImportError, OSError):
+    subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"],
+                   check=True)
 
 # en_core_web_sm is ~12MB — fast on CPU, no GPU needed
 # Install: python -m spacy download en_core_web_sm
