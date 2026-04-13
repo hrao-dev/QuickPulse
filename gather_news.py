@@ -4,7 +4,7 @@
 
 import requests
 import os
-from extract_news import extract_news_articles, create_dataframe, save_to_csv
+#from extract_news import extract_news_articles, create_dataframe, save_to_csv
 
 
 def fetch_newsapi_top_headlines(min_length=100, max_articles=25):
