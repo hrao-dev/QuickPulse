@@ -3,11 +3,22 @@
 
 import logging
 import pandas as pd
-from newspaper import Article
+from newspaper import Article, Config
+
+# Use a real browser User-Agent to reduce 403 rejections from news sites
+_config = Config()
+_config.browser_user_agent = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+_config.request_timeout = 10
+_config.fetch_images = False
+_config.memoize_articles = False
 
 def extract_full_content(url, min_length=100):
     try:
-        article = Article(url)
+        article = Article(url, config=_config)
         article.download()
         article.parse()
         text = article.text.strip()
