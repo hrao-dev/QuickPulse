@@ -2,8 +2,9 @@
 pandas
 transformers<5
 tokenizers
-torch
-newspaper3k
+torch>=2.1,<2.3
+hdbscan==0.8.33
+newspaper3k==0.2.8
 nltk
 scikit-learn
 numpy
