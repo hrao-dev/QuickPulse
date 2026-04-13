@@ -120,66 +120,15 @@ def _fallback(topic: str) -> dict:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def generate_briefing(topic_buckets: dict[str, list[dict]], force: bool = False) -> dict:
-    """
-    Given a dict of topic → [articles], return a full briefing dict.
-    Checks cache first unless force=True.
-
-    Returned structure:
-    {
-      "timestamp": <unix float>,
-      "topics": {
-        "Artificial Intelligence": {
-          "briefing": "...",
-          "sentiment": "Mostly Positive",
-          "entities": ["OpenAI", "Google", ...],
-          "top_story": "...",
-          "keywords": ["llm", "reasoning", ...],
-          "volume": 14,
-          "emoji": "🤖",
-          "articles": [{"title":..., "url":..., "source":...}, ...]
-        },
-        ...
-      }
-    }
-    """
-    if not force:
-        cached = _load_cache()
-        if cached:
-            return cached
-
-    print("Generating fresh briefing via Groq...")
-    result: dict = {"topics": {}}
-
-    for topic in TOPIC_LABELS:
-        articles = topic_buckets.get(topic, [])
-        if not articles:
-            continue
-
-        print(f"  Synthesising: {topic} ({len(articles)} articles)...")
-        synthesis = _call_groq(topic, articles)
-
-        # TF-IDF keywords from title+snippet texts (fast, local)
-        texts = [f"{a['title']} {a.get('snippet', '')}" for a in articles]
-        keywords = extract_keywords(texts, top_n=5)
-
-        # Slim down article list for rendering (title, url, source only)
-        slim_articles = [
-            {"title": a["title"], "url": a["url"], "source": a["source"]}
-            for a in articles[:5]
-        ]
-
-        result["topics"][topic] = {
-            "briefing": synthesis.get("briefing", ""),
-            "sentiment": synthesis.get("sentiment", "Mixed"),
-            "entities": synthesis.get("entities", [])[:5],
-            "top_story": synthesis.get("top_story", ""),
-            "keywords": keywords,
-            "volume": len(articles),
-            "emoji": TOPIC_EMOJIS.get(topic, "📰"),
-            "articles": slim_articles,
-        }
-
+def generate_briefing(
+    topic_buckets: dict[str, list[dict]],
+    force: bool = False,
+    divergence_result: dict | None = None,   # add this
+) -> dict:
+    ...
+    # Before _save_cache(result):
+    if divergence_result:
+        result["divergence"] = divergence_result
     _save_cache(result)
     return result
 
