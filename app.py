@@ -1,774 +1,725 @@
-# app.py
-# QuickPulse — AI-Powered News Intelligence Dashboard
-#
-# Pipeline (in execution order):
-#   1. gather_news       — fetch articles from NewsAPI (title + snippet only)
-#   2. cluster_news      — semantic embedding classifier (MiniLM prototypes)
-#   3. ner_trends        — spaCy NER aggregated across all articles
-#   4. divergence        — cross-source cosine variance per topic bucket
-#   5. briefing          — Groq LLM synthesis per topic (cached 60 min)
-#   6. Gradio UI         — render topic cards, entity panels, charts
-#
-# New additions vs original:
-#   - cluster_news now uses sentence embeddings instead of keyword scoring
-#   - ner_trends.py: new module, entity frequency across full news cycle
-#   - divergence.py: new module, consensus/contested signal per topic
-#   - Topic cards now show divergence badge + entity chips from NER
-#   - Entity Trends panel (orgs, people, places) added to analytics row
-#   - All legacy imports (summarizer, analyze_sentiment, extract_news) kept
-#     as stubs so nothing breaks if they're still present
-
-import json
-import time
-import traceback
-from pathlib import Path
-
-import gradio as gr
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+## This script provides a Gradio interface for gathering, clustering, summarizing,
+## and analyzing news articles with sentiment analysis and topic modeling.
 
 import gather_news
+import pandas as pd
 import cluster_news
-import briefing as briefing_module
-import ner_trends
-import divergence as divergence_module
+import summarizer
+import analyze_sentiment
+import extract_news
+import gradio as gr
+import plotly.express as px
 
-# ── Legacy stub imports (kept for backward compatibility) ─────────────────────
-try:
-    import summarizer
-except ImportError:
-    summarizer = None
+# ── DARK THEME TOKENS ────────────────────────────────────────────────────────
+# bg_base      #0d0f12   deepest surface
+# bg_card      #13161b   card / panel surface
+# bg_elevated  #1a1e26   hover / raised surface
+# border       #252932   subtle divider
+# accent       #65C23A   QuickPulse green
+# accent_dim   #4a9129   muted green
+# txt_primary  #e8eaf0   headings
+# txt_secondary #9aa0ad  body / labels
+# pos_bg       #0d1f0a   positive tint
+# pos_border   #3a7d1e   positive border
+# neu_bg       #0e1520   neutral tint
+# neu_border   #2a5298   neutral border
+# neg_bg       #1f0d0d   negative tint
+# neg_border   #8b1a1a   negative border
+# ─────────────────────────────────────────────────────────────────────────────
 
-try:
-    import analyze_sentiment
-except ImportError:
-    analyze_sentiment = None
+_DARK_CSS = """
+/* ── Root reset ── */
+*, *::before, *::after { box-sizing: border-box; }
 
-try:
-    import extract_news
-except ImportError:
-    extract_news = None
-
-# ── Constants ─────────────────────────────────────────────────────────────────
-
-SENTIMENT_COLORS = {
-    "Mostly Positive": ("#e8f5e9", "#43a047"),
-    "Mixed":           ("#fff8e1", "#f9a825"),
-    "Mostly Negative": ("#ffebee", "#c62828"),
+/* ── Force dark on every surface Gradio uses (local + HF) ── */
+body,
+html,
+.gradio-container,
+.gradio-container > .main,
+.gradio-container > .main > .wrap,
+.gradio-container > div,
+#root,
+.app {
+  background: #0d0f12 !important;
+  background-color: #0d0f12 !important;
+  color: #e8eaf0 !important;
+  font-family: Inter, system-ui, sans-serif !important;
 }
 
-DIVERGENCE_BADGES = {
-    "Consensus":          ("✓ Consensus",   "#e8f5e9", "#2e7d32"),
-    "Mixed":              ("~ Mixed",        "#fff8e1", "#f57f17"),
-    "Contested":          ("⚡ Contested",   "#ffebee", "#b71c1c"),
-    "Insufficient data":  ("— n/a",          "#f5f5f5", "#9e9e9e"),
+/* ── Panel / block surfaces ── */
+.gradio-container .block,
+.gradio-container .form,
+.gradio-container .panel,
+.gradio-container .wrap,
+.gradio-container div.svelte-1ipelgc,
+.gradio-container .gap,
+.gradio-container .padded,
+.gradio-container .tabitem,
+.contain,
+.gap {
+  background: #13161b !important;
+  background-color: #13161b !important;
+  border-color: #252932 !important;
 }
 
-TOPIC_EMOJIS = briefing_module.TOPIC_EMOJIS
+/* ── Input fields ── */
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container select {
+  background: #1a1e26 !important;
+  color: #e8eaf0 !important;
+  border: 1px solid #252932 !important;
+  border-radius: 8px !important;
+  font-family: 'Inter', sans-serif !important;
+}
+.gradio-container input:focus,
+.gradio-container textarea:focus {
+  border-color: #65C23A !important;
+  box-shadow: 0 0 0 2px rgba(101,194,58,0.15) !important;
+  outline: none !important;
+}
+.gradio-container label, .gradio-container .label-wrap span {
+  color: #9aa0ad !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+/* ── Buttons ── */
+.gradio-container button.primary,
+.gradio-container button[variant="primary"] {
+  background: #65C23A !important;
+  color: #0d0f12 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  font-size: 0.85rem !important;
+  letter-spacing: 0.03em !important;
+  transition: background 0.2s, transform 0.1s !important;
+}
+.gradio-container button.primary:hover {
+  background: #78d44e !important;
+  transform: translateY(-1px) !important;
+}
+.gradio-container button.secondary,
+.gradio-container button[variant="secondary"] {
+  background: transparent !important;
+  color: #9aa0ad !important;
+  border: 1px solid #252932 !important;
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  transition: border-color 0.2s, color 0.2s !important;
+}
+.gradio-container button.secondary:hover {
+  border-color: #65C23A !important;
+  color: #65C23A !important;
+}
+
+/* ── Accordion ── */
+.gradio-container .accordion {
+  background: #13161b !important;
+  border: 1px solid #252932 !important;
+  border-radius: 8px !important;
+}
+.gradio-container .accordion-header {
+  color: #9aa0ad !important;
+}
+
+/* ── Checkbox group ── */
+.gradio-container .checkbox-group label {
+  color: #e8eaf0 !important;
+  font-size: 0.85rem !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-weight: 400 !important;
+}
+
+/* ── Plot / chart container ── */
+.gradio-container .plot-container,
+.gradio-container .js-plotly-plot {
+  background: #13161b !important;
+  border-radius: 10px !important;
+  border: 1px solid #252932 !important;
+}
+
+/* ── Dataframe ── */
+.gradio-container table {
+  background: #13161b !important;
+  border-collapse: collapse !important;
+}
+.gradio-container th {
+  background: #1a1e26 !important;
+  color: #65C23A !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  border-bottom: 1px solid #252932 !important;
+  padding: 10px 14px !important;
+}
+.gradio-container td {
+  color: #9aa0ad !important;
+  border-bottom: 1px solid #1a1e26 !important;
+  padding: 9px 14px !important;
+  font-size: 0.85rem !important;
+}
+.gradio-container tr:hover td {
+  background: #1a1e26 !important;
+  color: #e8eaf0 !important;
+}
+
+/* ── File download ── */
+.gradio-container .file-preview {
+  background: #1a1e26 !important;
+  border: 1px solid #252932 !important;
+  border-radius: 8px !important;
+  color: #9aa0ad !important;
+}
+
+/* ── Markdown prose ── */
+.gradio-container .prose, .gradio-container .gr-markdown {
+  color: #e8eaf0 !important;
+}
+.gradio-container .prose a { color: #65C23A !important; }
+.gradio-container .prose h3 { color: #e8eaf0 !important; }
+.gradio-container hr { border-color: #252932 !important; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0d0f12; }
+::-webkit-scrollbar-thumb { background: #252932; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #65C23A; }
+
+/* ── Hero pulse dot ── */
+.qp-pulse-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #65C23A;
+  box-shadow: 0 0 6px #65C23A;
+  animation: qp-pulse 2s ease-in-out infinite;
+}
+@keyframes qp-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px #65C23A; }
+  50%       { opacity: 0.5; box-shadow: 0 0 2px #65C23A; }
+}
+"""
+
+# FIX #1: Use gr.HTML() for the hero block, not gr.Markdown().
+# gr.Markdown() sanitizes HTML and strips classes/animations.
+_HERO_HTML = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<div style="text-align:center;padding:48px 24px 36px;background:linear-gradient(160deg,#0d0f12 0%,#111620 100%);min-height:220px;">
+  <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(101,194,58,0.10);border:1px solid rgba(101,194,58,0.25);border-radius:20px;padding:5px 14px;margin-bottom:22px;">
+    <span class="qp-pulse-dot"></span>
+    <span style="font-size:0.72rem;font-weight:700;color:#65C23A;letter-spacing:0.12em;text-transform:uppercase;font-family:'JetBrains Mono',monospace;">live · multi-source</span>
+  </div>
+  <h1 style="margin:0 0 10px;font-size:clamp(2rem,5vw,2.8rem);font-weight:700;color:#e8eaf0;letter-spacing:-0.02em;font-family:'Inter',sans-serif;">QuickPulse</h1>
+  <p style="margin:0 auto 6px;max-width:520px;font-size:1rem;color:#65C23A;font-weight:500;font-family:'Inter',sans-serif;">Now do it across the live web.</p>
+  <p style="margin:0 auto;max-width:560px;font-size:0.9rem;color:#9aa0ad;line-height:1.6;font-family:'Inter',sans-serif;">Fetch, summarize and cluster many live sources simultaneously — with sentiment, topic analytics, and CSV export.</p>
+</div>
+"""
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SECTION 1 — DEDUPLICATION
-# ══════════════════════════════════════════════════════════════════════════════
+# ── CHART HELPERS (dark-themed) ───────────────────────────────────────────────
 
-def deduplicate_articles(articles: list[dict]) -> list[dict]:
-    """
-    Three-pass deduplication:
-      1. Exact URL match
-      2. (title, source) pair
-      3. (title, snippet) pair — catches syndicated rewrites
-    """
-    seen_urls: set = set()
-    seen_title_source: set = set()
-    seen_title_snippet: set = set()
+def plot_topic_frequency(result):
+    df = result["dataframe"]
+    topic_counts = df["cluster_label"].value_counts().reset_index()
+    topic_counts.columns = ["Topic", "Count"]
+    fig = px.bar(
+        topic_counts, x="Topic", y="Count",
+        title="Topic Frequency",
+        color="Count",
+        color_continuous_scale=[[0, "#2a5e14"], [0.5, "#65C23A"], [1, "#a3e87a"]],
+    )
+    fig.update_layout(
+        showlegend=False,
+        height=350,
+        paper_bgcolor="#13161b",
+        plot_bgcolor="#13161b",
+        font=dict(family="Inter, sans-serif", color="#9aa0ad", size=12),
+        title_font=dict(color="#e8eaf0", size=14, family="Inter, sans-serif"),
+        coloraxis_showscale=False,
+        xaxis=dict(
+            gridcolor="#1a1e26",
+            linecolor="#252932",
+            tickfont=dict(color="#9aa0ad", size=10),
+        ),
+        yaxis=dict(
+            gridcolor="#1a1e26",
+            linecolor="#252932",
+            tickfont=dict(color="#9aa0ad", size=10),
+        ),
+        margin=dict(l=16, r=16, t=44, b=16),
+    )
+    fig.update_traces(marker_line_width=0)
+    return fig
+
+
+def plot_sentiment_trends(result):
+    df = result["dataframe"]
+    sentiment_counts = df["sentiment"].value_counts().reset_index()
+    sentiment_counts.columns = ["Sentiment", "Count"]
+    color_map = {
+        "Positive": "#65C23A",
+        "positive": "#65C23A",
+        "Neutral":  "#4a7fa5",
+        "neutral":  "#4a7fa5",
+        "Negative": "#c0392b",
+        "negative": "#c0392b",
+    }
+    fig = px.pie(
+        sentiment_counts,
+        names="Sentiment",
+        values="Count",
+        title="Sentiment Distribution",
+        color="Sentiment",
+        color_discrete_map=color_map,
+        hole=0.45,
+    )
+    fig.update_traces(
+        textinfo="label+percent",
+        textfont=dict(family="Inter, sans-serif", color="#e8eaf0", size=11),
+        marker=dict(line=dict(color="#0d0f12", width=2)),
+    )
+    fig.update_layout(
+        height=350,
+        paper_bgcolor="#13161b",
+        font=dict(family="Inter, sans-serif", color="#9aa0ad", size=12),
+        title_font=dict(color="#e8eaf0", size=14, family="Inter, sans-serif"),
+        legend=dict(
+            bgcolor="#1a1e26",
+            bordercolor="#252932",
+            borderwidth=1,
+            font=dict(color="#9aa0ad", size=11),
+        ),
+        margin=dict(l=16, r=16, t=44, b=16),
+    )
+    return fig
+
+
+# ── BACKEND ───────────────────────────────────────────────────────────────────
+
+def render_top_clusters_table(result, top_n=5):
+    df = result["dataframe"]
+    cluster_counts = df["cluster_label"].value_counts().reset_index()
+    cluster_counts.columns = ["Cluster", "Articles"]
+    return cluster_counts.head(top_n)
+
+
+def fetch_and_process_latest_news(sentiment_filters):
+    articles = gather_news.fetch_newsapi_top_headlines()
+    return process_and_display_articles(articles, sentiment_filters, "Top Headlines")
+
+
+def fetch_and_process_topic_news(topic, sentiment_filters):
+    articles = gather_news.fetch_newsapi_everything(topic)
+    return process_and_display_articles(articles, sentiment_filters, topic or "Topic")
+
+
+def process_and_display_articles(articles, sentiment_filters, topic_label):
+    # FIX #2: All early-return paths now include None for top_clusters_table (11 values total)
+    if not articles:
+        return sentiment_filters, "", "", "", "", "", None, None, None, None, gr.update(visible=False)
+
+    articles = sorted(articles, key=lambda x: x.get("publishedAt", ""), reverse=True)
+    extracted_articles = extract_summarize_and_analyze_articles(articles)
+    deduped_articles = deduplicate_articles(extracted_articles)
+
+    if not deduped_articles:
+        return sentiment_filters, "", "", "", "", "", None, None, None, None, gr.update(visible=False)
+
+    df = pd.DataFrame(deduped_articles)
+    result = cluster_news.cluster_and_label_articles(df, content_column="content", summary_column="summary")
+    cluster_md_blocks = display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters)
+    csv_file, _ = save_clustered_articles(result["dataframe"], topic_label)
+
+    topic_fig        = plot_topic_frequency(result)
+    sentiment_fig    = plot_sentiment_trends(result)
+    top_clusters_table = render_top_clusters_table(result)
+
+    return sentiment_filters, *cluster_md_blocks, csv_file, topic_fig, sentiment_fig, top_clusters_table, gr.update(visible=True)
+
+
+def extract_summarize_and_analyze_articles(articles):
+    extracted_articles = []
+    for article in articles:
+        content = article.get("text") or article.get("content")
+        if not content:
+            continue
+        title = article.get("title", "No title")
+        summary = summarizer.generate_summary(content)
+        sentiment, score = analyze_sentiment.analyze_summary(summary)
+        extracted_articles.append({
+            "title":       title,
+            "url":         article.get("url"),
+            "source":      article.get("source", "Unknown"),
+            "author":      article.get("author", "Unknown"),
+            "publishedAt": article.get("publishedAt", "Unknown"),
+            "content":     content,
+            "summary":     summary,
+            "sentiment":   sentiment,
+            "score":       score,
+        })
+    return extracted_articles
+
+
+def deduplicate_articles(articles):
+    seen_urls          = set()
+    seen_title_source  = set()
+    seen_title_summary = set()
     deduped = []
-
     for art in articles:
-        url    = art.get("url", "")
-        title  = art.get("title", "").strip().lower()
-        source = art.get("source", "").strip().lower()
-        snippet = art.get("snippet", "").strip().lower()
-
-        k_ts  = (title, source)
-        k_tsn = (title, snippet)
-
+        url     = art.get("url")
+        title   = art.get("title",   "").strip().lower()
+        source  = art.get("source",  "").strip().lower()
+        summary = art.get("summary", "").strip().lower()
+        key_ts  = (title, source)
+        key_tsu = (title, summary)
         if url and url in seen_urls:
             continue
-        if k_ts in seen_title_source:
+        if key_ts in seen_title_source:
             continue
-        if k_tsn in seen_title_snippet:
+        if key_tsu in seen_title_summary:
             continue
-
         deduped.append(art)
         if url:
             seen_urls.add(url)
-        seen_title_source.add(k_ts)
-        seen_title_snippet.add(k_tsn)
-
+        seen_title_source.add(key_ts)
+        seen_title_summary.add(key_tsu)
     return deduped
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SECTION 2 — CORE PIPELINE
-# ══════════════════════════════════════════════════════════════════════════════
-
-def run_pipeline(topic: str | None = None) -> dict:
-    """
-    Full pipeline from fetch → classify → NER → divergence → briefing.
-
-    Returns a result dict:
-    {
-        "briefing":    { ...briefing_module output... },
-        "ner":         { "ORG": [...], "PERSON": [...], "GPE": [...] },
-        "divergence":  { topic: { score, label, ... }, ... },
-        "topic_buckets": { topic: [articles] },
-        "all_articles":  [articles],
-    }
-    """
-    # 1. Fetch
-    raw_articles = gather_news.fetch_articles(topic=topic)
-    if not raw_articles:
-        return {}
-
-    # Sort newest-first
-    raw_articles = sorted(
-        raw_articles,
-        key=lambda x: x.get("publishedAt", ""),
-        reverse=True,
-    )
-
-    # 2. Deduplicate (pre-classification, on raw articles)
-    articles = deduplicate_articles(raw_articles)
-    if not articles:
-        return {}
-
-    # 3. Semantic embedding classification
-    #    classify_articles() attaches 'topic', 'topic_score', 'topic_scores',
-    #    and '_embedding' to each article dict in-place.
-    articles = cluster_news.classify_articles(articles)
-
-    # 4. Group into topic buckets
-    topic_buckets = cluster_news.group_by_topic(articles)
-
-    # 5. NER — runs over ALL articles regardless of topic bucket
-    ner_result = ner_trends.extract_trending_entities(articles, top_n=8)
-
-    # 6. Divergence — per topic bucket, reuses _embedding already on each article
-    divergence_result = divergence_module.annotate_topic_buckets(topic_buckets)
-
-    # 7. Groq briefing synthesis (cache-aware)
-    #    Pass force=False so the 60-min cache is respected
-    briefing_result = briefing_module.generate_briefing(
-        topic_buckets=topic_buckets,
-        force=False,
-    )
-
-    return {
-        "briefing":      briefing_result,
-        "ner":           ner_result,
-        "divergence":    divergence_result,
-        "topic_buckets": topic_buckets,
-        "all_articles":  articles,
-    }
+def extract_summarize_and_analyze_content_from_urls(urls):
+    articles = extract_news.extract_news_articles(urls)
+    return extract_summarize_and_analyze_articles(articles)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SECTION 3 — CHART BUILDERS
-# ══════════════════════════════════════════════════════════════════════════════
+def display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters=None):
+    df = result["dataframe"]
+    cluster_primary_topics = result.get("cluster_primary_topics", {})
+    cluster_related_topics = result.get("cluster_related_topics", {})
+    df["sentiment"] = df["sentiment"].str.capitalize()
 
-def plot_topic_frequency(topic_buckets: dict[str, list]) -> go.Figure:
-    if not topic_buckets:
-        return go.Figure()
+    if sentiment_filters:
+        df = df[df["sentiment"].isin(sentiment_filters)]
 
-    topics = list(topic_buckets.keys())
-    counts = [len(topic_buckets[t]) for t in topics]
-    short_labels = [t.split("&")[0].strip() for t in topics]
+    if df.empty:
+        return ["### ⚠️ No matching articles."] + [""] * 4
 
-    fig = px.bar(
-        x=short_labels,
-        y=counts,
-        labels={"x": "Topic", "y": "Articles"},
-        title="Articles per topic",
-        color=short_labels,
-        color_discrete_sequence=px.colors.qualitative.Pastel,
-    )
-    fig.update_layout(
-        showlegend=False,
-        height=300,
-        margin=dict(l=20, r=20, t=40, b=20),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-    )
-    return fig
+    clusters = df.groupby("cluster_label")
+    markdown_blocks = []
 
+    for cluster_label, articles in clusters:
+        cluster_md = (
+            "<div style='"
+            "border:1px solid #252932;"
+            "border-radius:12px;"
+            "margin-bottom:20px;"
+            "padding:20px;"
+            "background:#13161b;"
+            "font-family:Inter,sans-serif;"
+            "'>"
+        )
 
-def plot_sentiment_distribution(briefing_result: dict) -> go.Figure:
-    if not briefing_result or "topics" not in briefing_result:
-        return go.Figure()
+        # ── Cluster header ──
+        cluster_md += (
+            f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:14px;'>"
+            f"<span style='"
+            f"background:rgba(101,194,58,0.12);"
+            f"border:1px solid rgba(101,194,58,0.3);"
+            f"border-radius:6px;"
+            f"padding:3px 10px;"
+            f"font-size:0.68rem;"
+            f"font-weight:700;"
+            f"color:#65C23A;"
+            f"letter-spacing:0.1em;"
+            f"text-transform:uppercase;"
+            f"font-family:JetBrains Mono,monospace;"
+            f"'>CLUSTER</span>"
+            f"<span style='font-size:1rem;font-weight:600;color:#e8eaf0;'>{cluster_label}</span>"
+            f"</div>"
+        )
 
-    counts = {"Mostly Positive": 0, "Mixed": 0, "Mostly Negative": 0}
-    for topic_data in briefing_result["topics"].values():
-        s = topic_data.get("sentiment", "Mixed")
-        counts[s] = counts.get(s, 0) + 1
+        lda_topics = articles["lda_topics"].iloc[0] if "lda_topics" in articles else ""
+        if lda_topics:
+            cluster_md += (
+                f"<p style='margin:0 0 6px;font-size:0.82rem;'>"
+                f"<span style='color:#9aa0ad;font-weight:600;'>Main Themes: </span>"
+                f"<span style='color:#a3e87a;'>{lda_topics}</span>"
+                f"</p>"
+            )
 
-    labels = list(counts.keys())
-    values = list(counts.values())
-    colors = ["#81c784", "#ffd54f", "#e57373"]
+        primary = cluster_primary_topics.get(cluster_label, [])
+        if primary:
+            cluster_md += (
+                f"<p style='margin:0 0 6px;font-size:0.82rem;'>"
+                f"<span style='color:#9aa0ad;font-weight:600;'>Primary Topics: </span>"
+                f"<span style='color:#65C23A;'>{', '.join(primary)}</span>"
+                f"</p>"
+            )
 
-    fig = go.Figure(data=[go.Pie(
-        labels=labels,
-        values=values,
-        marker_colors=colors,
-        textinfo="label+percent",
-        hole=0.35,
-    )])
-    fig.update_layout(
-        title="Sentiment across topics",
-        height=300,
-        margin=dict(l=20, r=20, t=40, b=20),
-        paper_bgcolor="rgba(0,0,0,0)",
-        showlegend=False,
-    )
-    return fig
+        related = cluster_related_topics.get(cluster_label, [])
+        if related:
+            cluster_md += (
+                f"<p style='margin:0 0 12px;font-size:0.82rem;'>"
+                f"<span style='color:#9aa0ad;font-weight:600;'>Related Topics: </span>"
+                f"<span style='color:#5a6270;'>{', '.join(related)}</span>"
+                f"</p>"
+            )
 
+        cluster_md += (
+            f"<p style='margin:0 0 14px;font-size:0.8rem;color:#9aa0ad;'>"
+            f"<span style='font-weight:600;color:#e8eaf0;'>{len(articles)}</span> articles</p>"
+        )
 
-def plot_divergence_chart(divergence_result: dict) -> go.Figure:
-    """
-    Horizontal bar chart showing divergence score per topic.
-    Color encodes Consensus / Mixed / Contested.
-    """
-    if not divergence_result:
-        return go.Figure()
-
-    label_map = {"Consensus": "#81c784", "Mixed": "#ffd54f", "Contested": "#e57373"}
-    topics, scores, colors, labels = [], [], [], []
-
-    for topic, data in divergence_result.items():
-        if data.get("label", "Insufficient data") == "Insufficient data":
-            continue
-        short = topic.split("&")[0].strip()
-        topics.append(short)
-        scores.append(round(data["score"], 3))
-        lbl = data["label"]
-        labels.append(lbl)
-        colors.append(label_map.get(lbl, "#bdbdbd"))
-
-    if not topics:
-        return go.Figure()
-
-    fig = go.Figure(go.Bar(
-        x=scores,
-        y=topics,
-        orientation="h",
-        marker_color=colors,
-        text=labels,
-        textposition="outside",
-    ))
-    fig.update_layout(
-        title="Source divergence by topic",
-        xaxis=dict(range=[0, 1], title="Divergence score"),
-        height=300,
-        margin=dict(l=20, r=80, t=40, b=20),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-    )
-    return fig
-
-
-def build_top_topics_table(topic_buckets: dict, divergence_result: dict) -> pd.DataFrame:
-    rows = []
-    for topic, articles in sorted(
-        topic_buckets.items(), key=lambda x: len(x[1]), reverse=True
-    ):
-        div = divergence_result.get(topic, {})
-        rows.append({
-            "Topic":      topic,
-            "Articles":   len(articles),
-            "Divergence": div.get("label", "—"),
-            "Score":      div.get("score", 0.0),
-        })
-    return pd.DataFrame(rows)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SECTION 4 — HTML RENDERERS
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _divergence_badge_html(label: str) -> str:
-    text, bg, color = DIVERGENCE_BADGES.get(label, DIVERGENCE_BADGES["Insufficient data"])
-    return (
-        f"<span style='"
-        f"background:{bg}; color:{color}; border:1px solid {color}; "
-        f"border-radius:12px; padding:2px 10px; font-size:0.82em; "
-        f"font-weight:600; margin-left:8px;'>{text}</span>"
-    )
-
-
-def _keyword_chips_html(keywords: list[str]) -> str:
-    if not keywords:
-        return ""
-    chips = " ".join(
-        f"<span style='background:#e3f2fd; color:#0d47a1; border-radius:10px; "
-        f"padding:2px 9px; font-size:0.80em; margin:2px; display:inline-block;'>"
-        f"{kw}</span>"
-        for kw in keywords
-    )
-    return f"<div style='margin:6px 0 4px 0;'>{chips}</div>"
-
-
-def _entity_chips_html(entities: list[str]) -> str:
-    if not entities:
-        return ""
-    chips = " ".join(
-        f"<span style='background:#f3e5f5; color:#6a1b9a; border-radius:10px; "
-        f"padding:2px 9px; font-size:0.80em; margin:2px; display:inline-block;'>"
-        f"{e}</span>"
-        for e in entities
-    )
-    return f"<div style='margin:4px 0;'><b style='font-size:0.85em;'>Key entities:</b> {chips}</div>"
-
-
-def render_topic_cards(
-    briefing_result: dict,
-    divergence_result: dict,
-    sentiment_filters: list[str],
-) -> list[str]:
-    """
-    Render up to 6 topic cards as HTML strings for the Gradio Markdown columns.
-    Each card contains:
-      - Topic header + divergence badge
-      - 3-sentence Groq briefing
-      - Sentiment label (color-coded)
-      - Named entity chips (from Groq)
-      - TF-IDF keyword chips
-      - Outlier article titles (if contested)
-      - Article links
-    """
-    if not briefing_result or "topics" not in briefing_result:
-        return [""] * 6
-
-    cards = []
-    topics_data = briefing_result["topics"]
-
-    for topic, data in topics_data.items():
-        sentiment = data.get("sentiment", "Mixed")
-
-        # Apply sentiment filter — map Groq labels to filter values
-        sentiment_map = {
-            "Mostly Positive": "Positive",
-            "Mixed":           "Neutral",
-            "Mostly Negative": "Negative",
+        # ── Sentiment buckets ──
+        sentiment_cfg = {
+            "Positive": {"bg": "#0d1f0a", "border": "#3a7d1e", "label": "Positive", "dot": "#65C23A"},
+            "Neutral":  {"bg": "#0e1520", "border": "#2a5298", "label": "Neutral",  "dot": "#4a7fa5"},
+            "Negative": {"bg": "#1f0d0d", "border": "#8b1a1a", "label": "Negative", "dot": "#c0392b"},
         }
-        mapped = sentiment_map.get(sentiment, "Neutral")
-        if sentiment_filters and mapped not in sentiment_filters:
-            cards.append("")
-            continue
 
-        emoji      = data.get("emoji", "📰")
-        briefing   = data.get("briefing", "")
-        entities   = data.get("entities", [])
-        top_story  = data.get("top_story", "")
-        keywords   = data.get("keywords", [])
-        volume     = data.get("volume", 0)
-        articles   = data.get("articles", [])
+        for sentiment, cfg in sentiment_cfg.items():
+            sentiment_articles = articles[articles["sentiment"] == sentiment]
+            if sentiment_articles.empty:
+                continue
 
-        div_data   = divergence_result.get(topic, {})
-        div_label  = div_data.get("label", "Insufficient data")
-        div_badge  = _divergence_badge_html(div_label)
-        outliers   = div_data.get("outlier_titles", [])
-
-        sent_bg, sent_border = SENTIMENT_COLORS.get(sentiment, ("#fff", "#aaa"))
-
-        # ── Card shell ──
-        card = (
-            f"<div style='border:1.5px solid #e0e0e0; border-radius:12px; "
-            f"margin-bottom:16px; padding:16px; background:#fafafa;'>"
-        )
-
-        # Header row: emoji + topic name + divergence badge
-        card += (
-            f"<div style='display:flex; align-items:center; margin-bottom:10px;'>"
-            f"<span style='font-size:1.4em; margin-right:8px;'>{emoji}</span>"
-            f"<span style='font-size:1.05em; font-weight:700; color:#1a237e;'>{topic}</span>"
-            f"{div_badge}"
-            f"<span style='margin-left:auto; font-size:0.80em; color:#757575;'>"
-            f"{volume} articles</span>"
-            f"</div>"
-        )
-
-        # Sentiment strip
-        card += (
-            f"<div style='background:{sent_bg}; border-left:5px solid {sent_border}; "
-            f"border-radius:4px; padding:6px 10px; margin-bottom:10px; "
-            f"font-size:0.85em; font-weight:600; color:{sent_border};'>"
-            f"{sentiment}"
-            f"</div>"
-        )
-
-        # Briefing text
-        if briefing:
-            card += (
-                f"<p style='font-size:0.93em; color:#212121; line-height:1.6; "
-                f"margin:0 0 10px 0;'>{briefing}</p>"
-            )
-
-        # Top story callout
-        if top_story:
-            card += (
-                f"<div style='background:#e8eaf6; border-radius:6px; "
-                f"padding:6px 10px; margin-bottom:10px; font-size:0.85em; color:#283593;'>"
-                f"<b>Top story:</b> {top_story}"
+            cluster_md += (
+                f"<div style='"
+                f"background:{cfg['bg']};"
+                f"border-left:3px solid {cfg['border']};"
+                f"border-radius:0 8px 8px 0;"
+                f"margin-bottom:12px;"
+                f"padding:12px 14px;"
+                f"'>"
+                f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:10px;'>"
+                f"<span style='width:7px;height:7px;border-radius:50%;background:{cfg['dot']};display:inline-block;'></span>"
+                f"<span style='font-size:0.78rem;font-weight:700;color:#e8eaf0;letter-spacing:0.04em;text-transform:uppercase;'>"
+                f"{cfg['label']} &nbsp;<span style='color:{cfg['dot']};'>({len(sentiment_articles)})</span>"
+                f"</span>"
                 f"</div>"
             )
 
-        # Entity chips (from Groq synthesis)
-        if entities:
-            card += _entity_chips_html(entities)
+            for _, article in sentiment_articles.iterrows():
+                score_val   = article.get("score", None)
+                score_badge = ""
+                if score_val is not None:
+                    try:
+                        score_badge = (
+                            f"<span style='"
+                            f"font-family:JetBrains Mono,monospace;"
+                            f"font-size:0.7rem;"
+                            f"color:{cfg['dot']};"
+                            f"background:rgba(0,0,0,0.3);"
+                            f"border:1px solid {cfg['border']};"
+                            f"border-radius:4px;"
+                            f"padding:1px 7px;"
+                            f"margin-left:8px;"
+                            f"'>{float(score_val):.2f}</span>"
+                        )
+                    except (ValueError, TypeError):
+                        pass
 
-        # TF-IDF keyword chips
-        if keywords:
-            card += _keyword_chips_html(keywords)
-
-        # Contested outlier notice
-        if div_label == "Contested" and outliers:
-            card += (
-                f"<div style='background:#fff3e0; border-left:4px solid #e65100; "
-                f"border-radius:4px; padding:6px 10px; margin:8px 0; font-size:0.82em;'>"
-                f"<b>Most divergent angles:</b><br>"
-                + "<br>".join(f"&nbsp;&nbsp;• {t}" for t in outliers if t) +
-                f"</div>"
-            )
-
-        # Article links
-        if articles:
-            card += "<div style='margin-top:10px;'>"
-            for art in articles:
-                art_title = art.get("title", "Untitled")
-                art_url   = art.get("url", "#")
-                art_src   = art.get("source", "")
-                card += (
-                    f"<div style='border-top:1px solid #eeeeee; padding:6px 0;'>"
-                    f"<a href='{art_url}' target='_blank' "
-                    f"style='color:#1565c0; font-size:0.88em; font-weight:500; "
-                    f"text-decoration:none;'>{art_title}</a>"
-                    f"<span style='font-size:0.78em; color:#9e9e9e; margin-left:6px;'>"
-                    f"{art_src}</span>"
+                cluster_md += (
+                    f"<div style='"
+                    f"margin:0 0 10px;"
+                    f"padding:10px 12px;"
+                    f"background:#13161b;"
+                    f"border:1px solid #252932;"
+                    f"border-radius:8px;"
+                    f"'>"
+                    f"<p style='margin:0 0 6px;font-size:0.88rem;font-weight:600;color:#e8eaf0;'>"
+                    f"📰 {article['title']}{score_badge}"
+                    f"</p>"
+                    f"<p style='margin:0 0 4px;font-size:0.78rem;color:#9aa0ad;'>"
+                    f"<span style='color:#5a6270;'>Source:</span> {article['source']}"
+                    f"</p>"
+                    f"<details style='margin:6px 0;'>"
+                    f"<summary style='cursor:pointer;font-size:0.78rem;font-weight:600;color:#65C23A;list-style:none;'>"
+                    f"▶ Summary"
+                    f"</summary>"
+                    f"<p style='margin:8px 0 0 12px;font-size:0.82rem;color:#9aa0ad;line-height:1.55;'>"
+                    f"{article['summary']}"
+                    f"</p>"
+                    f"</details>"
+                    f"<a href='{article['url']}' target='_blank' style='"
+                    f"font-size:0.78rem;"
+                    f"color:#65C23A;"
+                    f"text-decoration:none;"
+                    f"font-weight:500;"
+                    f"'>Read full article →</a>"
                     f"</div>"
                 )
-            card += "</div>"
 
-        card += "</div>"
-        cards.append(card)
+            cluster_md += "</div>"  # close sentiment bucket
 
-    # Always return exactly 6 slots
-    while len(cards) < 6:
-        cards.append("")
-    return cards[:6]
+        cluster_md += "</div>"  # close cluster card
+        markdown_blocks.append(cluster_md)
 
+    while len(markdown_blocks) < 5:
+        markdown_blocks.append("")
 
-def render_entity_panel(ner_result: dict) -> str:
-    """
-    Render trending entities (ORG, PERSON, GPE) as a single HTML block
-    with three side-by-side columns.
-    """
-    if not ner_result:
-        return "<p style='color:#9e9e9e;'>No entity data available.</p>"
-
-    label_config = {
-        "ORG":    ("Organizations", "#e3f2fd", "#1565c0"),
-        "PERSON": ("People",        "#f3e5f5", "#6a1b9a"),
-        "GPE":    ("Places",        "#e8f5e9", "#2e7d32"),
-    }
-
-    html = "<div style='display:flex; gap:12px; flex-wrap:wrap;'>"
-
-    for label_key, (label_name, bg, color) in label_config.items():
-        entities = ner_result.get(label_key, [])
-        if not entities:
-            continue
-
-        html += (
-            f"<div style='flex:1; min-width:160px; background:{bg}; "
-            f"border-radius:10px; padding:12px;'>"
-            f"<div style='font-weight:700; color:{color}; "
-            f"font-size:0.88em; margin-bottom:8px;'>{label_name}</div>"
-        )
-
-        for ent in entities[:7]:
-            name  = ent.get("text", "")
-            count = ent.get("count", 0)
-            arts  = ent.get("articles", [])
-            # Tooltip-style: show first article title on hover via title attr
-            tooltip = arts[0]["title"] if arts else ""
-            bar_w = min(100, count * 12)  # scale bar width to count
-            html += (
-                f"<div style='margin-bottom:6px;' title='{tooltip}'>"
-                f"<div style='display:flex; justify-content:space-between; "
-                f"font-size:0.82em; margin-bottom:2px;'>"
-                f"<span style='color:#212121; font-weight:500;'>{name}</span>"
-                f"<span style='color:{color};'>{count}</span>"
-                f"</div>"
-                f"<div style='background:rgba(0,0,0,0.08); border-radius:3px; height:4px;'>"
-                f"<div style='background:{color}; width:{bar_w}%; height:4px; "
-                f"border-radius:3px;'></div>"
-                f"</div>"
-                f"</div>"
-            )
-
-        html += "</div>"
-
-    html += "</div>"
-    return html
+    return markdown_blocks[:5]
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SECTION 5 — MAIN ORCHESTRATOR (called by Gradio buttons)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _empty_outputs():
-    """Return the correct number of empty outputs matching all Gradio outputs."""
-    return (
-        ["Positive", "Neutral", "Negative"],   # sentiment_filter
-        "", "", "", "", "", "",                 # 6 topic card columns
-        None,                                  # topic_freq_fig
-        None,                                  # sentiment_fig
-        None,                                  # divergence_fig
-        pd.DataFrame(),                        # top_topics_table
-        "<p style='color:#9e9e9e;'>No data.</p>",  # entity_panel
-        gr.update(visible=False),              # results_section
-    )
+def save_clustered_articles(df, topic):
+    if df.empty:
+        return None, None
+    csv_file = f"{topic.replace(' ', '_')}_clustered_articles.csv"
+    df.to_csv(csv_file, index=False)
+    return csv_file, None
 
 
-def process_and_render(topic: str, sentiment_filters: list[str]) -> tuple:
-    """
-    Main handler for both the Generate Digest and Fetch Top News buttons.
-    Returns a tuple matching all Gradio output components.
-    """
-    try:
-        result = run_pipeline(topic=topic.strip() if topic else None)
-    except Exception:
-        traceback.print_exc()
-        return _empty_outputs()
+def update_ui_with_columns(topic, urls, sentiment_filters):
+    extracted_articles = []
 
-    if not result:
-        return _empty_outputs()
+    if topic and topic.strip():
+        return fetch_and_process_topic_news(topic, sentiment_filters)
 
-    briefing_result  = result.get("briefing", {})
-    ner_result       = result.get("ner", {})
-    divergence_result = result.get("divergence", {})
-    topic_buckets    = result.get("topic_buckets", {})
+    if urls:
+        url_list = [url.strip() for url in urls.split("\n") if url.strip()]
+        extracted_articles.extend(extract_summarize_and_analyze_content_from_urls(url_list))
 
-    # ── Render topic cards (6 slots)
-    cards = render_topic_cards(briefing_result, divergence_result, sentiment_filters)
+    # FIX #2 (continued): early-return here also needs 11 values
+    if not extracted_articles:
+        return sentiment_filters, "", "", "", "", "", None, None, None, None, gr.update(visible=False)
 
-    # ── Charts
-    topic_freq_fig   = plot_topic_frequency(topic_buckets)
-    sentiment_fig    = plot_sentiment_distribution(briefing_result)
-    divergence_fig   = plot_divergence_chart(divergence_result)
-
-    # ── Top topics table
-    top_table = build_top_topics_table(topic_buckets, divergence_result)
-
-    # ── Entity panel HTML
-    entity_html = render_entity_panel(ner_result)
-
-    return (
-        sentiment_filters,
-        cards[0], cards[1], cards[2], cards[3], cards[4], cards[5],
-        topic_freq_fig,
-        sentiment_fig,
-        divergence_fig,
-        top_table,
-        entity_html,
-        gr.update(visible=True),
-    )
+    deduped_articles   = deduplicate_articles(extracted_articles)
+    df                 = pd.DataFrame(deduped_articles)
+    result             = cluster_news.cluster_and_label_articles(df, content_column="content", summary_column="summary")
+    cluster_md_blocks  = display_clusters_as_columns_grouped_by_sentiment(result, sentiment_filters)
+    csv_file, _        = save_clustered_articles(result["dataframe"], topic or "batch_upload")
+    topic_fig          = plot_topic_frequency(result)
+    sentiment_fig      = plot_sentiment_trends(result)
+    top_clusters_table = render_top_clusters_table(result)
+    return sentiment_filters, *cluster_md_blocks, csv_file, topic_fig, sentiment_fig, top_clusters_table, gr.update(visible=True)
 
 
-def generate_digest(topic: str, sentiment_filters: list[str]) -> tuple:
-    return process_and_render(topic, sentiment_filters)
-
-
-def fetch_top_news(sentiment_filters: list[str]) -> tuple:
-    return process_and_render("", sentiment_filters)
-
-
-def refilter(topic: str, sentiment_filters: list[str], *_cached) -> tuple:
-    try:
-        cache_file = Path("cache.json")
-        if not cache_file.exists():
-            return process_and_render(topic, sentiment_filters)
-        
-        import json, time
-        data = json.loads(cache_file.read_text())
-        age = time.time() - data.get("timestamp", 0)
-        if age > 3600:  # stale
-            return process_and_render(topic, sentiment_filters)
-        
-        divergence_result = data.get("divergence", {})
-        cards = render_topic_cards(data, divergence_result, sentiment_filters)
-        
-        return (
-            sentiment_filters,
-            cards[0], cards[1], cards[2], cards[3], cards[4], cards[5],
-            gr.update(), gr.update(), gr.update(),
-            gr.update(), gr.update(),
-            gr.update(visible=True),
-        )
-    except Exception:
-        return process_and_render(topic, sentiment_filters)
-
-
-def clear_all() -> tuple:
+def clear_interface():
     return (
         "",                                    # topic_input
         ["Positive", "Neutral", "Negative"],   # sentiment_filter
-        "", "", "", "", "", "",                 # 6 topic columns
-        None,                                  # topic_freq_fig
-        None,                                  # sentiment_fig
-        None,                                  # divergence_fig
-        pd.DataFrame(),                        # top_topics_table
-        "",                                    # entity_panel
-        gr.update(visible=False),              # results_section
+        "",                                    # urls_input
+        "", "", "", "", "",                    # cluster columns 0-4
+        gr.update(value=None),                 # csv_output
+        None, None, None,                      # topic_fig, sentiment_fig, top_clusters_table
+        gr.update(visible=False),              # clustered_digest_section
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SECTION 6 — GRADIO UI
-# ══════════════════════════════════════════════════════════════════════════════
+# ── GRADIO UI ─────────────────────────────────────────────────────────────────
 
-CSS = """
-.qp-header { text-align: center; margin-bottom: 4px; }
-.entity-panel { padding: 12px; }
-.gr-markdown p { margin: 4px 0; }
-"""
+_dark_theme = gr.themes.Base(
+    primary_hue=gr.themes.colors.green,
+    neutral_hue=gr.themes.colors.slate,
+).set(
+    body_background_fill="#0d0f12",
+    body_background_fill_dark="#0d0f12",
+    block_background_fill="#13161b",
+    block_background_fill_dark="#13161b",
+    block_border_color="#252932",
+    block_border_color_dark="#252932",
+    input_background_fill="#1a1e26",
+    input_background_fill_dark="#1a1e26",
+    input_border_color="#252932",
+    input_border_color_dark="#252932",
+    button_primary_background_fill="#65C23A",
+    button_primary_background_fill_dark="#65C23A",
+    button_primary_text_color="#0d0f12",
+    button_primary_text_color_dark="#0d0f12",
+    body_text_color="#e8eaf0",
+    body_text_color_dark="#e8eaf0",
+    body_text_color_subdued="#9aa0ad",
+    body_text_color_subdued_dark="#9aa0ad",
+)
 
-with gr.Blocks(theme=gr.themes.Base(), css=CSS) as demo:
+with gr.Blocks(theme=_dark_theme, css=_DARK_CSS) as demo:
 
-    # ── Header ──────────────────────────────────────────────────────────────
-    gr.Markdown(
-        "<div class='qp-header'>"
-        "<h1>QuickPulse</h1>"
-        "<h3 style='color:#1976d2; margin:0;'>"
-        "AI-Powered News Intelligence — Semantic Topics · Sentiment · Entity Trends · Source Divergence"
-        "</h3>"
-        "<p style='color:#616161; margin:6px 0 0 0;'>"
-        "Fetches live headlines, classifies by meaning, detects how much sources agree, "
-        "and synthesises each topic into a 3-sentence briefing via Groq."
-        "</p>"
-        "</div>"
-    )
+    # FIX #1: gr.HTML() renders raw HTML without sanitization
+    # gr.Markdown() strips class attributes and breaks the pulse animation
+    gr.HTML(_HERO_HTML)
 
-    # ── Controls row ────────────────────────────────────────────────────────
     with gr.Row():
         with gr.Column(scale=2):
-            topic_input = gr.Textbox(
-                label="Topic (leave blank for top headlines)",
-                placeholder="e.g. artificial intelligence, climate policy …",
-            )
+            topic_input = gr.Textbox(label="Enter Topic", placeholder="e.g. climate change")
             sentiment_filter = gr.CheckboxGroup(
                 choices=["Positive", "Neutral", "Negative"],
                 value=["Positive", "Neutral", "Negative"],
-                label="Sentiment filter",
+                label="Sentiment Filter",
             )
+            with gr.Accordion("🔗 Enter Multiple URLs", open=False):
+                urls_input = gr.Textbox(label="Enter URLs (newline separated)", lines=4)
             with gr.Row():
-                btn_generate = gr.Button("Generate digest", variant="primary", scale=2)
-                btn_top_news = gr.Button("Top headlines", scale=2)
-                btn_clear    = gr.Button("Clear", scale=1)
+                submit_button      = gr.Button("Generate Digest",        variant="primary",   scale=1)
+                latest_news_button = gr.Button("Fetch Top News",         variant="secondary", scale=1)
+                clear_button       = gr.Button("Clear",                  variant="secondary", scale=1)
+            csv_output = gr.File(label="📁 Download Clustered Digest CSV")
 
-        # ── Analytics column (always visible) ───────────────────────────────
         with gr.Column(scale=3):
             with gr.Row():
-                topic_freq_fig  = gr.Plot(label="Topic frequency")
-                sentiment_fig   = gr.Plot(label="Sentiment")
-                divergence_fig  = gr.Plot(label="Source divergence")
-            top_topics_table = gr.Dataframe(
-                label="Topic summary",
-                headers=["Topic", "Articles", "Divergence", "Score"],
-            )
+                topic_fig     = gr.Plot(label="Topic Frequency")
+                sentiment_fig = gr.Plot(label="Sentiment Trends")
+            top_clusters_table = gr.Dataframe(label="Top Clusters")
 
-    gr.Markdown("---")
+    gr.HTML("<hr style='border:none;border-top:1px solid #252932;margin:32px 0;'>")
 
-    # ── Entity trends panel ─────────────────────────────────────────────────
-    gr.Markdown("### Trending entities")
-    entity_panel = gr.HTML(
-        value="<p style='color:#9e9e9e;'>Run a digest to see trending organizations, "
-              "people, and places across today's news cycle.</p>",
-        label="Entity trends",
-    )
-
-    gr.Markdown("---")
-
-    # ── Topic cards (hidden until results arrive) ───────────────────────────
-    results_section = gr.Group(visible=False)
-    with results_section:
-        gr.Markdown("### Topic briefings")
+    clustered_digest_section = gr.Group(visible=False)
+    with clustered_digest_section:
+        gr.HTML(
+            "<h3 style='"
+            "font-family:Inter,sans-serif;"
+            "font-size:0.72rem;"
+            "font-weight:700;"
+            "color:#65C23A;"
+            "letter-spacing:0.12em;"
+            "text-transform:uppercase;"
+            "margin:0 0 20px;"
+            "'>Clustered News Digest</h3>"
+        )
         with gr.Row():
-            col0 = gr.Markdown()
-            col1 = gr.Markdown()
-            col2 = gr.Markdown()
-        with gr.Row():
-            col3 = gr.Markdown()
-            col4 = gr.Markdown()
-            col5 = gr.Markdown()
+            column_0 = gr.HTML()
+            column_1 = gr.HTML()
+            column_2 = gr.HTML()
+            column_3 = gr.HTML()
+            column_4 = gr.HTML()
 
-    # ── Last updated note ───────────────────────────────────────────────────
-    gr.Markdown(
-        "<p style='text-align:center; color:#9e9e9e; font-size:0.82em; margin-top:12px;'>"
-        "Briefings are cached for 60 minutes. "
-        "Charts update on every run. Divergence scores use cosine variance across source embeddings."
-        "</p>"
-    )
-
-    # ── Shared output list (must match return tuple order exactly) ───────────
-    _OUTPUTS = [
+    # ── Wire buttons ──────────────────────────────────────────────────────────
+    _outputs = [
         sentiment_filter,
-        col0, col1, col2, col3, col4, col5,
-        topic_freq_fig,
-        sentiment_fig,
-        divergence_fig,
-        top_topics_table,
-        entity_panel,
-        results_section,
+        column_0, column_1, column_2, column_3, column_4,
+        csv_output,
+        topic_fig, sentiment_fig, top_clusters_table,
+        clustered_digest_section,
     ]
 
-    # ── Button wiring ────────────────────────────────────────────────────────
-    btn_generate.click(
-        fn=generate_digest,
-        inputs=[topic_input, sentiment_filter],
-        outputs=_OUTPUTS,
+    submit_button.click(
+        fn=update_ui_with_columns,
+        inputs=[topic_input, urls_input, sentiment_filter],
+        outputs=_outputs,
     )
 
-    btn_top_news.click(
-        fn=fetch_top_news,
+    latest_news_button.click(
+        fn=fetch_and_process_latest_news,
         inputs=[sentiment_filter],
-        outputs=_OUTPUTS,
+        outputs=_outputs,
     )
 
-    # Sentiment filter change re-renders cards from cache (no refetch)
-    sentiment_filter.change(
-        fn=refilter,
-        inputs=[topic_input, sentiment_filter],
-        outputs=_OUTPUTS,
-    )
-
-    btn_clear.click(
-        fn=clear_all,
+    clear_button.click(
+        fn=clear_interface,
         inputs=[],
         outputs=[
-            topic_input,
-            sentiment_filter,
-            col0, col1, col2, col3, col4, col5,
-            topic_freq_fig,
-            sentiment_fig,
-            divergence_fig,
-            top_topics_table,
-            entity_panel,
-            results_section,
+            topic_input, sentiment_filter, urls_input,
+            column_0, column_1, column_2, column_3, column_4,
+            csv_output,
+            topic_fig, sentiment_fig, top_clusters_table,
+            clustered_digest_section,
         ],
     )
 
-
-# ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="0.0.0.0")
