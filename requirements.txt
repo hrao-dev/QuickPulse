@@ -28,7 +28,6 @@ spacy>=3.7.0
 gradio
 requests
 pandas
-plotly.express
 groq
 sentence-transformers
 spacy
