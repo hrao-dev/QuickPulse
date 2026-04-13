@@ -1,17 +1,15 @@
 # requirements.txt — QuickPulse dependencies
 pandas
 transformers<5
-tokenizers
+tokenizers<0.16
 torch>=2.1,<2.3
 hdbscan==0.8.33
-newspaper3k==0.2.8
-nltk
-scikit-learn
-numpy
+nltk==3.8.1
+scikit-learn==1.4.2
+numpy<2
 requests
 gradio
 lxml_html_clean
 plotly
-hdbscan
-umap-learn
-sentence_transformers
+umap-learn==0.5.5
+sentence_transformers==2.6.1
