@@ -1,17 +1,16 @@
-# requirements.txt file to install app dependencies
+# requirements.txt — QuickPulse (Streamlit edition)
 pandas
 transformers<5
 tokenizers
 torch
-newspaper4k
+newspaper3k
 nltk
 scikit-learn
 numpy
 requests
-gradio
+streamlit
 lxml_html_clean
 plotly
 hdbscan
 umap-learn
 sentence_transformers
-accelerate

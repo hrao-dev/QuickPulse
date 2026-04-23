@@ -22,23 +22,17 @@ def reduce_dimensions(embeddings, n_neighbors=10, min_dist=0.0, n_components=5, 
     if n_samples < 3:
         return embeddings
     n_components = min(max(2, n_components), n_samples - 2)
-    n_neighbors = min(max(2, n_neighbors), n_samples - 1)
+    n_neighbors  = min(max(2, n_neighbors),  n_samples - 1)
     reducer = umap.UMAP(
-        n_neighbors=n_neighbors,
-        min_dist=min_dist,
-        n_components=n_components,
-        random_state=random_state,
-        n_jobs=1,
-        metric='cosine'
+        n_neighbors=n_neighbors, min_dist=min_dist,
+        n_components=n_components, random_state=random_state,
+        n_jobs=1, metric='cosine'
     )
-    reduced = reducer.fit_transform(embeddings)
-    return reduced
+    return reducer.fit_transform(embeddings)
 
 def cluster_with_hdbscan(embeddings, min_cluster_size=2, min_samples=1):
     clusterer = hdbscan.HDBSCAN(
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
-        metric='euclidean'
+        min_cluster_size=min_cluster_size, min_samples=min_samples, metric='euclidean'
     )
     labels = clusterer.fit_predict(embeddings)
     return labels, clusterer
@@ -46,8 +40,7 @@ def cluster_with_hdbscan(embeddings, min_cluster_size=2, min_samples=1):
 def extract_tfidf_labels(df, content_column, cluster_labels, top_n=6):
     grouped = defaultdict(list)
     for idx, label in enumerate(cluster_labels):
-        if label == -1:
-            continue
+        if label == -1: continue
         grouped[label].append(df.iloc[idx][content_column])
     tfidf_labels = {}
     for cluster_id, texts in grouped.items():
@@ -58,7 +51,7 @@ def extract_tfidf_labels(df, content_column, cluster_labels, top_n=6):
             tfidf_labels[cluster_id] = []
             continue
         top_indices = np.argsort(avg_tfidf)[::-1][:top_n]
-        top_terms = [vectorizer.get_feature_names_out()[i] for i in top_indices]
+        top_terms   = [vectorizer.get_feature_names_out()[i] for i in top_indices]
         tfidf_labels[cluster_id] = top_terms
     return tfidf_labels
 
@@ -82,72 +75,54 @@ def get_representative_summary(df, cluster_indices, embeddings, centroid):
     min_idx = np.argmin(dists)
     return df.iloc[cluster_indices[min_idx]]["summary"]
 
-def label_clusters_hybrid(df, content_column, summary_column, cluster_labels, embeddings, tfidf_labels, lda_labels, vague_threshold=15):
-    cluster_label_map = {}
+def label_clusters_hybrid(df, content_column, summary_column, cluster_labels, embeddings,
+                           tfidf_labels, lda_labels, vague_threshold=15):
+    cluster_label_map     = {}
     cluster_primary_topics = {}
     cluster_related_topics = {}
     for cluster_id in set(cluster_labels):
-        if cluster_id == -1:
-            continue
-        topics = lda_labels.get(cluster_id, []) or tfidf_labels.get(cluster_id, [])
-        topics = [t for t in topics if t]
-        primary_topics = topics[:3]
-        related_topics = topics[3:]
-        label = ", ".join(primary_topics) if primary_topics else ""
+        if cluster_id == -1: continue
+        topics  = lda_labels.get(cluster_id, []) or tfidf_labels.get(cluster_id, [])
+        topics  = [t for t in topics if t]
+        primary = topics[:3]
+        related = topics[3:]
+        label   = ", ".join(primary) if primary else ""
         if not label or len(label) < vague_threshold:
             cluster_indices = np.where(cluster_labels == cluster_id)[0]
             centroid = embeddings[cluster_indices].mean(axis=0)
-            rep_summary = get_representative_summary(df, cluster_indices, embeddings, centroid)
-            label = rep_summary[:80] + "..." if len(rep_summary) > 80 else rep_summary
-        cluster_label_map[cluster_id] = label
-        cluster_primary_topics[cluster_id] = primary_topics
-        cluster_related_topics[cluster_id] = related_topics
+            rep = get_representative_summary(df, cluster_indices, embeddings, centroid)
+            label = rep[:80] + "..." if len(rep) > 80 else rep
+        cluster_label_map[cluster_id]      = label
+        cluster_primary_topics[cluster_id] = primary
+        cluster_related_topics[cluster_id] = related
     return cluster_label_map, cluster_primary_topics, cluster_related_topics
 
 def cluster_and_label_articles(
-    df,
-    content_column="content",
-    summary_column="summary",
-    min_cluster_size=2,
-    min_samples=1,
-    n_neighbors=10,
-    min_dist=0.0,
-    n_components=5,
-    top_n=6,
-    lda_n_topics=1,
-    lda_n_words=6,
-    vague_threshold=15
+    df, content_column="content", summary_column="summary",
+    min_cluster_size=2, min_samples=1, n_neighbors=10, min_dist=0.0,
+    n_components=5, top_n=6, lda_n_topics=1, lda_n_words=6, vague_threshold=15
 ):
     if df.empty:
         return None
 
-    df = df.reset_index(drop=True)
-
     min_cluster_size = max(2, min(min_cluster_size, len(df) // 2)) if len(df) < 20 else min_cluster_size
 
-    embeddings = generate_embeddings(df, content_column)
+    embeddings         = generate_embeddings(df, content_column)
     reduced_embeddings = reduce_dimensions(embeddings, n_neighbors, min_dist, n_components)
-    cluster_labels, clusterer = cluster_with_hdbscan(reduced_embeddings, min_cluster_size, min_samples)
-    df['cluster_id'] = cluster_labels
+    cluster_labels, _  = cluster_with_hdbscan(reduced_embeddings, min_cluster_size, min_samples)
+    df['cluster_id']   = cluster_labels
 
     tfidf_labels = extract_tfidf_labels(df, content_column, cluster_labels, top_n=top_n)
 
     lda_labels = {}
     for cluster_id in set(cluster_labels):
-        if cluster_id == -1:
-            continue
-        # FIX: use pandas boolean mask on the DataFrame column, not numpy array indexing
-        cluster_texts = df.loc[df['cluster_id'] == cluster_id, content_column].tolist()
-        if cluster_texts:
-            topics = lda_topic_modeling(
-                cluster_texts, n_topics=lda_n_topics, n_words=lda_n_words
-            )
-            lda_labels[cluster_id] = topics
-        else:
-            lda_labels[cluster_id] = []
+        if cluster_id == -1: continue
+        cluster_texts = df[cluster_labels == cluster_id][content_column].tolist()
+        lda_labels[cluster_id] = lda_topic_modeling(cluster_texts, lda_n_topics, lda_n_words) if cluster_texts else []
 
     cluster_label_map, cluster_primary_topics, cluster_related_topics = label_clusters_hybrid(
-        df, content_column, summary_column, cluster_labels, embeddings, tfidf_labels, lda_labels, vague_threshold=vague_threshold
+        df, content_column, summary_column, cluster_labels, embeddings,
+        tfidf_labels, lda_labels, vague_threshold=vague_threshold
     )
 
     df['cluster_label'] = [
@@ -159,16 +134,14 @@ def cluster_and_label_articles(
     ]
 
     detected_topics = {
-        label: {
-            "size": int((df['cluster_label'] == label).sum())
-        }
+        label: {"size": int((df['cluster_label'] == label).sum())}
         for label in set(df['cluster_label']) if label != "Noise/Other"
     }
 
     return {
-        "dataframe": df,
-        "detected_topics": detected_topics,
-        "number_of_clusters": len(detected_topics),
+        "dataframe":              df,
+        "detected_topics":        detected_topics,
+        "number_of_clusters":     len(detected_topics),
         "cluster_primary_topics": cluster_primary_topics,
-        "cluster_related_topics": cluster_related_topics
+        "cluster_related_topics": cluster_related_topics,
     }
