@@ -1,6 +1,7 @@
 """
-QuickPulse — Streamlit Edition (Redesigned)
-Editorial dark aesthetic. No HTML leaking into markdown.
+QuickPulse — Streamlit Edition (v3 Refined)
+Matches the refined dark mockup: #07090f base, #00e5a0 accent, Inter + JetBrains Mono.
+CSV download removed.
 """
 
 import streamlit as st
@@ -15,38 +16,44 @@ import analyze_sentiment
 import extract_news
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DESIGN TOKENS
-# bg0   #07080d   page background
-# bg1   #0d0f17   card / panel
-# bg2   #13161f   elevated surface / input
-# rim   #1c2030   borders
-# acc   #6C8EFF   electric periwinkle — primary accent
-# cya   #3DD9C5   teal — secondary / links
-# pos   #4ADE80   green — positive
-# neg   #FB7185   rose  — negative
-# neu   #94A3B8   slate — neutral
-# hi    #EEF0F8   primary text
-# lo    #4A5568   muted text
+# DESIGN TOKENS  (matched 1-to-1 from mockup)
+# bg0   #07090f   page / deepest background
+# bg1   #0a0d17   sidebar / cluster header row
+# bg2   #0c0f1a   input surfaces / hover state
+# rim   #131825   primary border
+# rim2  #1a2030   secondary border (inputs, pills)
+# acc   #00e5a0   electric green — primary accent / positive
+# pur   #9d7dff   purple — cluster tag 2
+# amb   #ffb347   amber  — cluster tag 3
+# blu   #6ca0ff   blue   — cluster tag 4
+# neg   #ff6b6b   red    — negative sentiment
+# lo    #6b7d99   muted text
+# dim   #2e3a50   very muted / labels
+# hi    #dde4f0   primary text
+# mid   #b0bcd4   secondary text
 # ─────────────────────────────────────────────────────────────────────────────
 
 PAGE_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --bg0: #07080d;
-  --bg1: #0d0f17;
-  --bg2: #13161f;
-  --rim: #1c2030;
-  --acc: #6C8EFF;
-  --cya: #3DD9C5;
-  --pos: #4ADE80;
-  --neg: #FB7185;
-  --neu: #94A3B8;
-  --hi:  #EEF0F8;
-  --lo:  #4A5568;
-  --font: 'Outfit', sans-serif;
-  --mono: 'Spline Sans Mono', monospace;
+  --bg0:  #07090f;
+  --bg1:  #0a0d17;
+  --bg2:  #0c0f1a;
+  --rim:  #131825;
+  --rim2: #1a2030;
+  --acc:  #00e5a0;
+  --pur:  #9d7dff;
+  --amb:  #ffb347;
+  --blu:  #6ca0ff;
+  --neg:  #ff6b6b;
+  --lo:   #6b7d99;
+  --dim:  #2e3a50;
+  --hi:   #dde4f0;
+  --mid:  #b0bcd4;
+  --font: 'Inter', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
 }
 
 html, body, [class*="st-"], .stApp {
@@ -60,218 +67,171 @@ html, body, [class*="st-"], .stApp {
   max-width: 1320px !important;
 }
 
-/* Sidebar */
+/* ── Sidebar ── */
 [data-testid="stSidebar"] {
-  background: var(--bg1) !important;
+  background: var(--bg0) !important;
   border-right: 1px solid var(--rim) !important;
 }
 [data-testid="stSidebar"] > div:first-child {
-  background: var(--bg1) !important;
-  padding: 2rem 1.4rem !important;
+  background: var(--bg0) !important;
+  padding: 24px 18px !important;
 }
 
-/* Inputs */
+/* ── Inputs ── */
 [data-testid="stTextInput"] input,
 [data-testid="stTextArea"] textarea {
   background: var(--bg2) !important;
-  border: 1px solid var(--rim) !important;
-  border-radius: 10px !important;
+  border: 1px solid var(--rim2) !important;
+  border-radius: 8px !important;
   color: var(--hi) !important;
   font-family: var(--font) !important;
-  font-size: 0.92rem !important;
-  padding: 0.6rem 0.9rem !important;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  font-size: 0.85rem !important;
+  padding: 8px 11px !important;
+  transition: border-color 0.15s;
 }
 [data-testid="stTextInput"] input:focus,
 [data-testid="stTextArea"] textarea:focus {
-  border-color: var(--acc) !important;
-  box-shadow: 0 0 0 3px rgba(108,142,255,0.12) !important;
+  border-color: rgba(0,229,160,0.4) !important;
+  box-shadow: none !important;
+}
+[data-testid="stTextInput"] input::placeholder,
+[data-testid="stTextArea"] textarea::placeholder {
+  color: var(--dim) !important;
 }
 
-/* Labels */
+/* ── Labels ── */
 [data-testid="stTextInput"] label,
 [data-testid="stTextArea"] label,
 [data-testid="stMultiSelect"] label {
   font-family: var(--mono) !important;
-  font-size: 0.65rem !important;
-  font-weight: 500 !important;
+  font-size: 0.6rem !important;
+  font-weight: 600 !important;
   letter-spacing: 0.1em !important;
   text-transform: uppercase !important;
-  color: var(--lo) !important;
+  color: var(--dim) !important;
 }
 
-/* Multiselect */
+/* ── Multiselect ── */
 [data-testid="stMultiSelect"] span[data-baseweb="tag"] {
-  background: rgba(108,142,255,0.15) !important;
-  border: 1px solid rgba(108,142,255,0.35) !important;
   border-radius: 6px !important;
-  color: var(--acc) !important;
   font-family: var(--mono) !important;
-  font-size: 0.72rem !important;
+  font-size: 0.68rem !important;
+  font-weight: 500 !important;
 }
 [data-testid="stMultiSelect"] > div {
   background: var(--bg2) !important;
-  border: 1px solid var(--rim) !important;
-  border-radius: 10px !important;
+  border: 1px solid var(--rim2) !important;
+  border-radius: 8px !important;
 }
 
-/* Buttons */
+/* ── Buttons ── */
 .stButton > button {
   font-family: var(--font) !important;
   font-weight: 600 !important;
-  font-size: 0.85rem !important;
-  border-radius: 10px !important;
-  padding: 0.55rem 1.2rem !important;
-  transition: all 0.18s ease !important;
+  font-size: 0.82rem !important;
+  border-radius: 8px !important;
+  padding: 9px 12px !important;
+  transition: all 0.15s ease !important;
   width: 100% !important;
+  letter-spacing: 0.01em !important;
 }
 .stButton > button[data-testid="baseButton-primary"] {
   background: var(--acc) !important;
-  color: #07080d !important;
+  color: #020408 !important;
   border: none !important;
+  font-weight: 700 !important;
 }
 .stButton > button[data-testid="baseButton-primary"]:hover {
-  background: #8AAAFF !important;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(108,142,255,0.25) !important;
+  background: #00ffb3 !important;
 }
 .stButton > button[data-testid="baseButton-secondary"] {
   background: transparent !important;
-  color: var(--neu) !important;
-  border: 1px solid var(--rim) !important;
+  color: var(--lo) !important;
+  border: 1px solid var(--rim2) !important;
+  text-align: left !important;
 }
 .stButton > button[data-testid="baseButton-secondary"]:hover {
-  border-color: var(--acc) !important;
-  color: var(--acc) !important;
-  background: rgba(108,142,255,0.06) !important;
+  border-color: var(--dim) !important;
+  color: var(--mid) !important;
+  background: rgba(255,255,255,0.02) !important;
 }
 
-/* Expander */
+/* ── Expander ── */
 details summary {
   font-family: var(--font) !important;
-  font-size: 0.85rem !important;
-  color: var(--neu) !important;
-  background: var(--bg1) !important;
-  border: 1px solid var(--rim) !important;
-  border-radius: 10px !important;
+  font-size: 0.82rem !important;
+  color: var(--lo) !important;
+  background: var(--bg2) !important;
+  border: 1px solid var(--rim2) !important;
+  border-radius: 8px !important;
 }
 details > div {
   background: var(--bg1) !important;
-  border: 1px solid var(--rim) !important;
+  border: 1px solid var(--rim2) !important;
   border-top: none !important;
-  border-radius: 0 0 10px 10px !important;
+  border-radius: 0 0 8px 8px !important;
 }
 
-/* Metric cards */
-[data-testid="metric-container"] {
-  background: var(--bg1) !important;
-  border: 1px solid var(--rim) !important;
-  border-radius: 14px !important;
-  padding: 1.25rem 1.4rem !important;
-  position: relative;
-  overflow: hidden;
-}
-[data-testid="metric-container"]::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--acc), var(--cya));
-}
-[data-testid="stMetricLabel"] p {
-  font-family: var(--mono) !important;
-  font-size: 0.63rem !important;
-  font-weight: 500 !important;
-  letter-spacing: 0.1em !important;
-  text-transform: uppercase !important;
-  color: var(--lo) !important;
-}
-[data-testid="stMetricValue"] {
-  font-family: var(--font) !important;
-  font-size: 2rem !important;
-  font-weight: 700 !important;
-  color: var(--hi) !important;
-}
-
-/* Charts */
+/* ── Charts ── */
 .js-plotly-plot, .plot-container {
-  border-radius: 14px !important;
-  border: 1px solid var(--rim) !important;
+  border-radius: 0 !important;
+  border: none !important;
   overflow: hidden !important;
-  background: var(--bg1) !important;
+  background: var(--bg0) !important;
 }
 
-/* Dataframe */
-[data-testid="stDataFrame"] {
-  border: 1px solid var(--rim) !important;
-  border-radius: 14px !important;
-  overflow: hidden;
-}
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; height: 4px; }
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 3px; height: 3px; }
 ::-webkit-scrollbar-track { background: var(--bg0); }
-::-webkit-scrollbar-thumb { background: var(--rim); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--acc); }
+::-webkit-scrollbar-thumb { background: var(--rim2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); }
 
-/* Misc */
+/* ── Misc ── */
 .stSpinner > div { border-top-color: var(--acc) !important; }
-.stAlert { background: var(--bg1) !important; border: 1px solid var(--rim) !important; border-radius: 10px !important; }
-hr { border: none !important; border-top: 1px solid var(--rim) !important; margin: 2rem 0 !important; }
+.stAlert {
+  background: var(--bg1) !important;
+  border: 1px solid var(--rim2) !important;
+  border-radius: 8px !important;
+}
+hr {
+  border: none !important;
+  border-top: 1px solid var(--rim) !important;
+  margin: 0 !important;
+}
 [data-testid="stHeader"] { background: transparent !important; }
+div[data-testid="column"] { padding: 0 !important; }
 </style>
 """
 
 HERO_HTML = """
-<div style="
-  background:linear-gradient(160deg,#07080d 0%,#0d0c1c 60%,#07080d 100%);
-  padding:3rem 2.5rem 2.5rem;
-  margin-bottom:2rem;
-  border-bottom:1px solid #1c2030;
-  position:relative;overflow:hidden;
-">
-  <div style="position:absolute;top:-80px;left:50%;transform:translateX(-50%);
-    width:600px;height:240px;
-    background:radial-gradient(ellipse,rgba(108,142,255,0.12) 0%,transparent 68%);
-    pointer-events:none;"></div>
-  <div style="position:absolute;bottom:-40px;right:10%;
-    width:300px;height:200px;
-    background:radial-gradient(ellipse,rgba(61,217,197,0.07) 0%,transparent 70%);
-    pointer-events:none;"></div>
-
-  <div style="margin-bottom:1.2rem;">
-    <span style="
-      display:inline-flex;align-items:center;gap:7px;
-      background:rgba(108,142,255,0.1);border:1px solid rgba(108,142,255,0.25);
-      border-radius:100px;padding:4px 14px;">
-      <span style="width:6px;height:6px;border-radius:50%;background:#6C8EFF;
-        display:inline-block;box-shadow:0 0 8px #6C8EFF;
-        animation:hpulse 2.2s ease-in-out infinite;"></span>
-      <span style="font-family:'Spline Sans Mono',monospace;font-size:0.62rem;
-        font-weight:500;color:#6C8EFF;letter-spacing:0.15em;text-transform:uppercase;">
+<div style="background:#07090f;padding:28px 0 20px;border-bottom:1px solid #131825;margin-bottom:0;">
+  <div style="margin-bottom:10px;">
+    <span style="display:inline-flex;align-items:center;gap:6px;
+      background:rgba(0,229,160,0.07);border:1px solid rgba(0,229,160,0.18);
+      border-radius:100px;padding:3px 10px;">
+      <span style="width:5px;height:5px;border-radius:50%;background:#00e5a0;
+        display:inline-block;animation:lp 2s ease-in-out infinite;"></span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;
+        font-weight:500;color:#00e5a0;letter-spacing:0.12em;text-transform:uppercase;">
         live · multi-source</span>
     </span>
   </div>
-
-  <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:0.75rem;">
-    <h1 style="font-family:'Outfit',sans-serif;font-weight:800;
-      font-size:clamp(2.4rem,5vw,3.4rem);letter-spacing:-0.04em;
-      margin:0;color:#EEF0F8;">QuickPulse</h1>
-    <span style="font-family:'Spline Sans Mono',monospace;font-size:0.72rem;
-      color:#1c2030;padding-bottom:0.4rem;">v2</span>
+  <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;">
+    <h1 style="font-family:'Inter',sans-serif;font-weight:700;
+      font-size:clamp(1.8rem,3.5vw,2.5rem);letter-spacing:-0.05em;margin:0;color:#fff;">
+      Quick<em style="font-style:normal;color:#00e5a0;">Pulse</em></h1>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;
+      color:#1a2030;padding-bottom:0.2rem;">v2</span>
   </div>
-
-  <p style="font-family:'Outfit',sans-serif;font-size:1rem;color:#94A3B8;
-    max-width:520px;margin:0;line-height:1.65;">
+  <p style="font-family:'Inter',sans-serif;font-size:0.88rem;color:#6b7d99;
+    max-width:460px;margin:0;line-height:1.6;">
     Fetch, cluster &amp; analyze live news —
-    <span style="color:#3DD9C5;">sentiment-scored</span>,
-    <span style="color:#6C8EFF;">topic-clustered</span>, AI-summarized.
+    <span style="color:#00e5a0;">sentiment-scored</span>,
+    <span style="color:#9d7dff;">topic-clustered</span>,
+    AI-summarized.
   </p>
-
   <style>
-    @keyframes hpulse {
-      0%,100% { opacity:1; box-shadow:0 0 8px #6C8EFF; }
-      50%      { opacity:0.45; box-shadow:0 0 2px #6C8EFF; }
-    }
+    @keyframes lp { 0%,100%{opacity:1} 50%{opacity:0.3} }
   </style>
 </div>
 """
@@ -280,14 +240,25 @@ HERO_HTML = """
 # CHARTS
 # ─────────────────────────────────────────────────────────────────────────────
 
+CLUSTER_COLORS = ["#00e5a0", "#9d7dff", "#ffb347", "#6ca0ff", "#ff6b6b"]
+
 _BASE_LAYOUT = dict(
-    paper_bgcolor="#0d0f17",
-    plot_bgcolor="#07080d",
-    font=dict(family="Outfit, sans-serif", color="#4A5568", size=12),
-    title_font=dict(family="Outfit, sans-serif", color="#EEF0F8", size=14),
-    margin=dict(l=16, r=16, t=48, b=16),
-    xaxis=dict(gridcolor="#13161f", linecolor="#1c2030", tickfont=dict(color="#4A5568", size=10)),
-    yaxis=dict(gridcolor="#13161f", linecolor="#1c2030", tickfont=dict(color="#4A5568", size=10)),
+    paper_bgcolor="#07090f",
+    plot_bgcolor="#07090f",
+    font=dict(family="Inter, sans-serif", color="#2e3a50", size=11),
+    margin=dict(l=12, r=12, t=44, b=12),
+    xaxis=dict(
+        gridcolor="#0c0f1a",
+        linecolor="#131825",
+        tickfont=dict(color="#2e3a50", size=10),
+        zeroline=False,
+    ),
+    yaxis=dict(
+        gridcolor="#0c0f1a",
+        linecolor="#131825",
+        tickfont=dict(color="#6b7d99", size=10),
+        zeroline=False,
+    ),
 )
 
 
@@ -295,23 +266,28 @@ def plot_topic_bar(result):
     df = result["dataframe"]
     tc = df["cluster_label"].value_counts().reset_index()
     tc.columns = ["Topic", "Count"]
-    tc["Label"] = tc["Topic"].apply(lambda x: x[:34] + "…" if len(x) > 34 else x)
+    tc["Label"] = tc["Topic"].apply(lambda x: x[:36] + "…" if len(x) > 36 else x)
+    bar_colors = [CLUSTER_COLORS[i % len(CLUSTER_COLORS)] for i in range(len(tc))]
     fig = go.Figure(go.Bar(
-        y=tc["Label"], x=tc["Count"], orientation="h",
-        marker=dict(
-            color=tc["Count"],
-            colorscale=[[0, "#1a2050"], [0.5, "#6C8EFF"], [1, "#3DD9C5"]],
-            showscale=False, line=dict(width=0),
-        ),
+        y=tc["Label"],
+        x=tc["Count"],
+        orientation="h",
+        marker=dict(color=bar_colors, opacity=0.82, line=dict(width=0)),
         hovertemplate="<b>%{y}</b><br>%{x} articles<extra></extra>",
     ))
     fig.update_layout(
-        title="Topic Clusters",
-        height=max(240, len(tc) * 38 + 80),
+        title=dict(
+            text="<span style='font-family:JetBrains Mono,monospace;font-size:9px;"
+                 "letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;'>Topic clusters</span>",
+            x=0, pad=dict(l=0),
+        ),
+        height=max(220, len(tc) * 36 + 60),
         showlegend=False,
+        bargap=0.38,
         **_BASE_LAYOUT,
     )
     fig.update_yaxes(autorange="reversed")
+    fig.update_xaxes(showgrid=False)
     return fig
 
 
@@ -319,39 +295,81 @@ def plot_sentiment_donut(result):
     df = result["dataframe"]
     sc = df["sentiment"].str.capitalize().value_counts().reset_index()
     sc.columns = ["Sentiment", "Count"]
-    cmap = {"Positive": "#4ADE80", "Neutral": "#94A3B8", "Negative": "#FB7185"}
-    colors = [cmap.get(s, "#6C8EFF") for s in sc["Sentiment"]]
+    cmap = {"Positive": "#00e5a0", "Neutral": "#2e3a50", "Negative": "#ff6b6b"}
+    colors = [cmap.get(s, "#6b7d99") for s in sc["Sentiment"]]
     total = int(sc["Count"].sum())
     fig = go.Figure(go.Pie(
-        labels=sc["Sentiment"], values=sc["Count"], hole=0.62,
-        marker=dict(colors=colors, line=dict(color="#07080d", width=3)),
+        labels=sc["Sentiment"],
+        values=sc["Count"],
+        hole=0.65,
+        marker=dict(colors=colors, line=dict(color="#07090f", width=3)),
         textinfo="label+percent",
-        textfont=dict(family="Outfit, sans-serif", color="#EEF0F8", size=11),
+        textfont=dict(family="Inter, sans-serif", color="#dde4f0", size=10),
         hovertemplate="<b>%{label}</b><br>%{value} articles<extra></extra>",
+        opacity=0.88,
     ))
     fig.add_annotation(
         text=f"<b>{total}</b><br>articles",
         x=0.5, y=0.5, showarrow=False,
-        font=dict(family="Outfit, sans-serif", color="#EEF0F8", size=13),
+        font=dict(family="Inter, sans-serif", color="#ffffff", size=14),
     )
     fig.update_layout(
-        title="Sentiment",
-        height=300,
-        legend=dict(bgcolor="#0d0f17", bordercolor="#1c2030", borderwidth=1,
-                    font=dict(color="#94A3B8", size=11)),
+        title=dict(
+            text="<span style='font-family:JetBrains Mono,monospace;font-size:9px;"
+                 "letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;'>Sentiment</span>",
+            x=0, pad=dict(l=0),
+        ),
+        height=260,
+        legend=dict(
+            bgcolor="#07090f",
+            bordercolor="#131825",
+            borderwidth=1,
+            font=dict(color="#6b7d99", size=10, family="Inter, sans-serif"),
+        ),
         **{k: v for k, v in _BASE_LAYOUT.items() if k not in ("xaxis", "yaxis")},
     )
     return fig
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DIGEST — full self-contained HTML rendered via components.html
-# This bypasses Streamlit's markdown sanitizer entirely, so no raw HTML leaks.
+# DIGEST HTML
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _esc(s):
-    """Minimal HTML escape for user-derived strings."""
     return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+_CLUSTER_TAGS = [
+    {"color": "#00e5a0", "bg": "rgba(0,229,160,0.08)",   "border": "rgba(0,229,160,0.18)"},
+    {"color": "#9d7dff", "bg": "rgba(122,90,255,0.10)",  "border": "rgba(157,125,255,0.20)"},
+    {"color": "#ffb347", "bg": "rgba(255,179,71,0.08)",  "border": "rgba(255,179,71,0.18)"},
+    {"color": "#6ca0ff", "bg": "rgba(100,160,255,0.08)", "border": "rgba(108,160,255,0.20)"},
+    {"color": "#ff6b6b", "bg": "rgba(255,107,107,0.08)", "border": "rgba(255,107,107,0.18)"},
+]
+
+SENT_CFG = {
+    "Positive": {
+        "color": "#00e5a0",
+        "sbg":   "rgba(0,229,160,0.08)",
+        "sbd":   "rgba(0,229,160,0.16)",
+        "lbdr":  "#00e5a0",
+        "lbg":   "#0c0f1a",
+    },
+    "Neutral": {
+        "color": "#6b7d99",
+        "sbg":   "rgba(107,125,153,0.08)",
+        "sbd":   "rgba(107,125,153,0.18)",
+        "lbdr":  "#6b7d99",
+        "lbg":   "#0c0f1a",
+    },
+    "Negative": {
+        "color": "#ff6b6b",
+        "sbg":   "rgba(255,107,107,0.10)",
+        "sbd":   "rgba(255,107,107,0.18)",
+        "lbdr":  "#ff6b6b",
+        "lbg":   "#0c0f1a",
+    },
+}
 
 
 def build_digest_html(result, sentiment_filters=None):
@@ -363,29 +381,27 @@ def build_digest_html(result, sentiment_filters=None):
     if sentiment_filters:
         df = df[df["sentiment"].isin(sentiment_filters)]
     if df.empty:
-        body = "<p style='color:#4A5568;padding:2rem;'>No articles match the selected filters.</p>"
+        body = ("<p style='color:#2e3a50;padding:2rem;font-family:Inter,sans-serif;'>"
+                "No articles match the selected filters.</p>")
         return _wrap_html(body), 120
 
-    SENT_CFG = {
-        "Positive": {"bar": "#4ADE80", "bg": "rgba(74,222,128,0.06)",  "tbg": "rgba(74,222,128,0.12)",  "tbr": "rgba(74,222,128,0.3)"},
-        "Neutral":  {"bar": "#94A3B8", "bg": "rgba(148,163,184,0.04)", "tbg": "rgba(148,163,184,0.1)",  "tbr": "rgba(148,163,184,0.25)"},
-        "Negative": {"bar": "#FB7185", "bg": "rgba(251,113,133,0.06)", "tbg": "rgba(251,113,133,0.12)", "tbr": "rgba(251,113,133,0.3)"},
-    }
-
-    def pill(text, color, bg, border):
-        return (f'<span style="display:inline-block;background:{bg};border:1px solid {border};'
-                f'border-radius:6px;padding:2px 9px;font-size:0.63rem;font-weight:500;'
-                f'color:{color};letter-spacing:0.03em;margin:2px 3px 2px 0;">{_esc(text)}</span>')
-
     cards = []
-    for cluster_label, arts in df.groupby("cluster_label"):
-        lda     = arts["lda_topics"].iloc[0] if "lda_topics" in arts else ""
+    for idx, (cluster_label, arts) in enumerate(df.groupby("cluster_label")):
+        tag = _CLUSTER_TAGS[idx % len(_CLUSTER_TAGS)]
         primary = cluster_primary.get(cluster_label, [])
         related = cluster_related.get(cluster_label, [])
 
-        primary_pills = "".join(pill(t, "#6C8EFF", "rgba(108,142,255,0.12)", "rgba(108,142,255,0.3)") for t in primary)
-        related_pills = "".join(pill(t, "#4A5568", "rgba(74,85,104,0.1)",    "rgba(74,85,104,0.2)")   for t in related)
-        all_pills     = primary_pills + related_pills
+        def pill(text, c, bg, bd):
+            return (f'<span style="display:inline-block;background:{bg};border:1px solid {bd};'
+                    f'border-radius:5px;padding:2px 8px;font-size:0.58rem;font-weight:600;'
+                    f'color:{c};letter-spacing:0.04em;margin:2px 3px 2px 0;'
+                    f'font-family:JetBrains Mono,monospace;">{_esc(text)}</span>')
+
+        primary_pills = "".join(
+            pill(t, tag["color"], tag["bg"], tag["border"]) for t in primary)
+        related_pills = "".join(
+            pill(t, "#2e3a50", "rgba(46,58,80,0.1)", "rgba(46,58,80,0.2)") for t in related)
+        all_pills = primary_pills + related_pills
 
         sent_sections = []
         for sent_label, cfg in SENT_CFG.items():
@@ -393,95 +409,89 @@ def build_digest_html(result, sentiment_filters=None):
             if sent_arts.empty:
                 continue
 
-            article_cards = []
+            article_rows = []
             for _, art in sent_arts.iterrows():
                 score_val = art.get("score")
                 score_badge = ""
                 try:
                     sv = float(score_val)
                     score_badge = (
-                        f'<span style="flex-shrink:0;font-family:Spline Sans Mono,monospace;'
-                        f'font-size:0.63rem;font-weight:600;color:{cfg["bar"]};'
-                        f'background:{cfg["tbg"]};border:1px solid {cfg["tbr"]};'
-                        f'border-radius:6px;padding:2px 8px;white-space:nowrap;">{sv:.2f}</span>'
+                        f'<span style="flex-shrink:0;font-family:JetBrains Mono,monospace;'
+                        f'font-size:0.6rem;font-weight:700;color:{cfg["color"]};'
+                        f'background:{cfg["sbg"]};border:1px solid {cfg["sbd"]};'
+                        f'border-radius:5px;padding:2px 7px;white-space:nowrap;">{sv:.2f}</span>'
                     )
                 except (ValueError, TypeError, AttributeError):
                     pass
 
-                article_cards.append(f"""
-<div class="acard" style="background:#07080d;border:1px solid #1c2030;border-radius:10px;
-  padding:14px 16px;margin-bottom:10px;">
-  <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;">
-    <p style="font-family:Outfit,sans-serif;font-size:0.88rem;font-weight:600;
-      color:#EEF0F8;line-height:1.4;margin:0;flex:1;">{_esc(art.get("title","Untitled"))}</p>
-    {score_badge}
-  </div>
-  <p style="font-family:Outfit,sans-serif;font-size:0.73rem;color:#4A5568;margin:0 0 10px;">
-    {_esc(art.get("source","Unknown"))}
-  </p>
-  <details style="margin-bottom:10px;">
-    <summary style="font-family:Outfit,sans-serif;font-size:0.78rem;font-weight:500;
-      color:#6C8EFF;cursor:pointer;list-style:none;
-      display:inline-flex;align-items:center;gap:5px;">
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-        <path d="M2 3.5L5 6.5L8 3.5" stroke="#6C8EFF" stroke-width="1.5" stroke-linecap="round"/>
+                article_rows.append(f"""
+<div class="arow" style="display:flex;align-items:flex-start;gap:10px;
+  padding:9px 18px;border-top:1px solid #0d1120;">
+  <div style="flex:1;min-width:0;">
+    <p style="font-family:Inter,sans-serif;font-size:0.75rem;color:#b0bcd4;
+      line-height:1.5;margin:0 0 3px;">{_esc(art.get("title","Untitled"))}</p>
+    <p style="font-family:Inter,sans-serif;font-size:0.65rem;color:#2e3a50;margin:0 0 5px;">
+      {_esc(art.get("source","Unknown"))}</p>
+    <details style="margin-bottom:5px;">
+      <summary style="font-family:Inter,sans-serif;font-size:0.65rem;font-weight:500;
+        color:{cfg["color"]};cursor:pointer;list-style:none;
+        display:inline-flex;align-items:center;gap:4px;
+        background:none;border:none;border-radius:0;padding:0;">
+        <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+          <path d="M2 3.5L5 6.5L8 3.5" stroke="{cfg["color"]}" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        Summary
+      </summary>
+      <p style="font-family:Inter,sans-serif;font-size:0.72rem;color:#6b7d99;
+        line-height:1.6;margin:7px 0 0;padding:8px 10px;
+        background:{cfg["lbg"]};border-left:2px solid {cfg["lbdr"]};
+        border-radius:0 5px 5px 0;">{_esc(art.get("summary",""))}</p>
+    </details>
+    <a href="{_esc(art.get("url","#"))}" target="_blank"
+      style="font-family:Inter,sans-serif;font-size:0.65rem;font-weight:500;
+      color:#1e2a3e;text-decoration:none;display:inline-flex;align-items:center;gap:3px;">
+      Read article
+      <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+        <path d="M2 8L8 2M8 2H4M8 2V6" stroke="#1e2a3e" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      Summary
-    </summary>
-    <p style="font-family:Outfit,sans-serif;font-size:0.82rem;color:#94A3B8;
-      line-height:1.65;margin:10px 0 0;padding:10px 12px;
-      background:#0d0f17;border-left:2px solid {cfg["bar"]};
-      border-radius:0 6px 6px 0;">{_esc(art.get("summary",""))}</p>
-  </details>
-  <a href="{_esc(art.get("url","#"))}" target="_blank"
-    style="font-family:Outfit,sans-serif;font-size:0.75rem;font-weight:600;
-    color:#3DD9C5;text-decoration:none;display:inline-flex;align-items:center;gap:4px;">
-    Read article
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-      <path d="M2 8L8 2M8 2H4M8 2V6" stroke="#3DD9C5" stroke-width="1.5"
-        stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-  </a>
+    </a>
+  </div>
+  {score_badge}
 </div>""")
 
             sent_sections.append(f"""
-<div style="background:{cfg["bg"]};border-left:2px solid {cfg["bar"]};
-  border-radius:0 10px 10px 0;padding:14px 14px 4px;margin-bottom:12px;">
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-    <span style="width:6px;height:6px;border-radius:50%;background:{cfg["bar"]};
-      box-shadow:0 0 6px {cfg["bar"]};display:inline-block;flex-shrink:0;"></span>
-    <span style="font-family:Spline Sans Mono,monospace;font-size:0.63rem;font-weight:600;
-      color:{cfg["bar"]};letter-spacing:0.1em;text-transform:uppercase;">{sent_label}</span>
-    <span style="margin-left:auto;font-family:Outfit,sans-serif;font-size:0.72rem;color:#4A5568;">
-      {len(sent_arts)} article{"s" if len(sent_arts) != 1 else ""}
-    </span>
+<div style="border-top:1px solid #0f1420;">
+  <div style="padding:5px 18px;display:flex;align-items:center;gap:7px;">
+    <span style="font-size:0.58rem;font-weight:700;padding:2px 7px;border-radius:10px;
+      text-transform:uppercase;letter-spacing:0.06em;font-family:JetBrains Mono,monospace;
+      background:{cfg["sbg"]};color:{cfg["color"]};border:1px solid {cfg["sbd"]};">
+      {sent_label}</span>
+    <span style="font-size:0.65rem;color:#2e3a50;font-family:Inter,sans-serif;">
+      {len(sent_arts)} article{"s" if len(sent_arts)!=1 else ""}</span>
   </div>
-  {"".join(article_cards)}
+  {"".join(article_rows)}
 </div>""")
 
         cards.append(f"""
-<div style="background:#0d0f17;border:1px solid #1c2030;border-radius:14px;
-  padding:22px 24px;margin-bottom:16px;position:relative;overflow:hidden;">
-  <div style="position:absolute;top:0;left:0;right:0;height:2px;
-    background:linear-gradient(90deg,#6C8EFF,#3DD9C5);opacity:0.55;"></div>
-  <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-    <span style="font-family:Spline Sans Mono,monospace;font-size:0.58rem;font-weight:600;
-      color:#6C8EFF;letter-spacing:0.14em;text-transform:uppercase;
-      background:rgba(108,142,255,0.1);border:1px solid rgba(108,142,255,0.25);
-      border-radius:6px;padding:3px 9px;white-space:nowrap;margin-top:2px;">cluster</span>
-    <span style="font-family:Outfit,sans-serif;font-size:1rem;font-weight:700;
-      color:#EEF0F8;line-height:1.3;flex:1;">{_esc(cluster_label)}</span>
-    <span style="font-family:Outfit,sans-serif;font-size:0.75rem;color:#4A5568;white-space:nowrap;">
-      {len(arts)} articles</span>
+<div style="border-bottom:1px solid #131825;">
+  <div style="display:flex;align-items:center;gap:9px;padding:11px 18px;background:#0a0d17;">
+    <span style="font-size:0.58rem;font-weight:700;letter-spacing:0.07em;
+      text-transform:uppercase;padding:3px 8px;border-radius:5px;
+      font-family:JetBrains Mono,monospace;
+      background:{tag["bg"]};color:{tag["color"]};border:1px solid {tag["border"]};">Cluster</span>
+    <span style="font-size:0.8rem;font-weight:600;color:#dde4f0;letter-spacing:-0.02em;
+      font-family:Inter,sans-serif;">{_esc(cluster_label)}</span>
+    <span style="margin-left:auto;font-size:0.65rem;color:#2e3a50;white-space:nowrap;
+      font-family:Inter,sans-serif;">{len(arts)} articles</span>
   </div>
-  {f'<div style="margin-bottom:14px;line-height:1.9;">{all_pills}</div>' if all_pills else ""}
-  {f'<p style="font-family:Outfit,sans-serif;font-size:0.75rem;color:#3DD9C5;margin:0 0 14px;opacity:0.7;">{_esc(lda)}</p>' if lda else ""}
+  {f'<div style="padding:6px 18px 8px;line-height:1.9;">{all_pills}</div>' if all_pills else ""}
   {"".join(sent_sections)}
 </div>""")
 
     n_clusters = df["cluster_label"].nunique()
     n_articles = len(df)
-    est_height = max(400, n_clusters * 340 + n_articles * 130)
+    est_height = max(400, n_clusters * 320 + n_articles * 110)
     return _wrap_html("\n".join(cards)), est_height
 
 
@@ -491,17 +501,16 @@ def _wrap_html(body):
 <head>
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  *{{box-sizing:border-box;margin:0;padding:0;}}
-  body{{background:#07080d;font-family:Outfit,sans-serif;color:#EEF0F8;padding:4px 2px 16px;}}
-  ::-webkit-scrollbar{{width:4px;}}
-  ::-webkit-scrollbar-track{{background:#07080d;}}
-  ::-webkit-scrollbar-thumb{{background:#1c2030;border-radius:2px;}}
-  details>summary{{list-style:none;}}
-  details>summary::-webkit-details-marker{{display:none;}}
-  .acard{{transition:border-color 0.2s;}}
-  .acard:hover{{border-color:#6C8EFF !important;}}
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#07090f;font-family:Inter,sans-serif;color:#dde4f0;padding:0 0 16px}}
+  ::-webkit-scrollbar{{width:3px}}
+  ::-webkit-scrollbar-track{{background:#07090f}}
+  ::-webkit-scrollbar-thumb{{background:#131825;border-radius:2px}}
+  details>summary{{list-style:none}}
+  details>summary::-webkit-details-marker{{display:none}}
+  .arow:hover{{background:#0c0f1a !important}}
 </style>
 </head>
 <body>{body}</body>
@@ -518,7 +527,7 @@ def extract_summarize_and_analyze_articles(articles):
         content = article.get("text") or article.get("content")
         if not content:
             continue
-        summary   = summarizer.generate_summary(content)
+        summary = summarizer.generate_summary(content)
         sentiment, score = analyze_sentiment.analyze_summary(summary)
         extracted.append({
             "title":       article.get("title", "No title"),
@@ -542,9 +551,9 @@ def deduplicate_articles(articles):
         title = art.get("title", "").strip().lower()
         src   = art.get("source", "").strip().lower()
         summ  = art.get("summary", "").strip().lower()
-        if url and url in seen_urls:         continue
-        if (title, src)  in seen_ts:         continue
-        if (title, summ) in seen_tsumm:      continue
+        if url and url in seen_urls:     continue
+        if (title, src)  in seen_ts:    continue
+        if (title, summ) in seen_tsumm: continue
         deduped.append(art)
         if url: seen_urls.add(url)
         seen_ts.add((title, src))
@@ -561,7 +570,8 @@ def run_pipeline(articles, sentiment_filters):
     if not deduped:
         return None
     df = pd.DataFrame(deduped)
-    return cluster_news.cluster_and_label_articles(df, content_column="content", summary_column="summary")
+    return cluster_news.cluster_and_label_articles(
+        df, content_column="content", summary_column="summary")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -583,14 +593,29 @@ for key in ("result", "active_filters"):
     if key not in st.session_state:
         st.session_state[key] = None
 
-# ── Sidebar ──────────────────────────────────────────────────────────────────
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("""<p style="font-family:'Spline Sans Mono',monospace;font-size:0.62rem;
-      font-weight:500;color:#4A5568;letter-spacing:0.12em;text-transform:uppercase;
-      margin-bottom:1.5rem;">Controls</p>""", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="margin-bottom:22px;">
+      <div style="font-family:'Inter',sans-serif;font-size:1.05rem;font-weight:700;
+        letter-spacing:-0.04em;color:#fff;margin-bottom:7px;">
+        Quick<em style="font-style:normal;color:#00e5a0;">Pulse</em>
+      </div>
+      <span style="display:inline-flex;align-items:center;gap:5px;
+        font-family:'JetBrains Mono',monospace;font-size:0.56rem;font-weight:500;
+        color:#00e5a0;background:rgba(0,229,160,0.07);
+        border:1px solid rgba(0,229,160,0.18);border-radius:20px;padding:3px 9px;">
+        <span style="width:5px;height:5px;border-radius:50%;background:#00e5a0;
+          display:inline-block;"></span>
+        live · multi-source
+      </span>
+    </div>""", unsafe_allow_html=True)
 
-    topic_input = st.text_input("Topic", placeholder="e.g. quantum computing",
-                                 help="Leave blank for top headlines.")
+    topic_input = st.text_input(
+        "Topic",
+        placeholder="e.g. quantum computing",
+        help="Leave blank for top headlines.",
+    )
 
     sentiment_filters = st.multiselect(
         "Sentiment Filter",
@@ -599,20 +624,27 @@ with st.sidebar:
     )
 
     with st.expander("Batch URL input"):
-        urls_input = st.text_area("URLs — one per line", height=100,
-                                   placeholder="https://…\nhttps://…")
+        urls_input = st.text_area(
+            "URLs — one per line",
+            height=90,
+            placeholder="https://…\nhttps://…",
+        )
 
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     run_btn       = st.button("⚡  Generate Digest", use_container_width=True, type="primary")
-    headlines_btn = st.button("📡  Top Headlines",   use_container_width=True, type="secondary")
+    headlines_btn = st.button("✦  Top Headlines",   use_container_width=True, type="secondary")
     clear_btn     = st.button("✕  Clear",            use_container_width=True, type="secondary")
 
-    st.markdown("""<div style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid #1c2030;">
-      <p style="font-family:'Spline Sans Mono',monospace;font-size:0.58rem;
-        color:#1c2030;line-height:2;letter-spacing:0.04em;">
-        POWERED BY<br>NewsAPI · HDBSCAN<br>FlanT5 · BART-MNLI<br>sentence-transformers
-      </p></div>""", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="margin-top:2rem;padding-top:20px;border-top:1px solid #131825;">
+      <p style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;
+        color:#1a2030;line-height:2;letter-spacing:0.04em;">
+        Powered by<br>
+        <span style="color:#2e3a50;">NewsAPI · HDBSCAN<br>FlanT5 · BART-MNLI<br>
+        sentence-transformers</span>
+      </p>
+    </div>""", unsafe_allow_html=True)
 
 # ── Actions ───────────────────────────────────────────────────────────────────
 if clear_btn:
@@ -650,55 +682,105 @@ result  = st.session_state.result
 filters = st.session_state.active_filters or sentiment_filters
 
 if result is not None:
-    df_res    = result["dataframe"]
-    n_art     = len(df_res)
-    n_clust   = result["number_of_clusters"]
-    pos_pct   = round(100 * (df_res["sentiment"].str.capitalize() == "Positive").sum() / max(n_art, 1))
-    neg_pct   = round(100 * (df_res["sentiment"].str.capitalize() == "Negative").sum() / max(n_art, 1))
+    df_res  = result["dataframe"]
+    n_art   = len(df_res)
+    n_clust = result["number_of_clusters"]
+    pos_pct = round(100 * (df_res["sentiment"].str.capitalize() == "Positive").sum() / max(n_art, 1))
+    neg_pct = round(100 * (df_res["sentiment"].str.capitalize() == "Negative").sum() / max(n_art, 1))
 
-    # KPI row
+    # ── KPI strip — flush borderless stat bar matching mockup ──
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Articles",  n_art)
-    k2.metric("Clusters",  n_clust)
-    k3.metric("Positive",  f"{pos_pct}%")
-    k4.metric("Negative",  f"{neg_pct}%")
+    with k1:
+        st.markdown(f"""
+        <div style="padding:16px 18px;border:1px solid #131825;
+          border-right:none;background:#07090f;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.54rem;font-weight:600;
+            letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;margin-bottom:5px;">
+            Articles</div>
+          <div style="font-family:'Inter',sans-serif;font-size:1.5rem;font-weight:700;
+            letter-spacing:-0.05em;color:#fff;">{n_art}</div>
+        </div>""", unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"""
+        <div style="padding:16px 18px;border-top:1px solid #131825;
+          border-bottom:1px solid #131825;background:#07090f;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.54rem;font-weight:600;
+            letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;margin-bottom:5px;">
+            Clusters</div>
+          <div style="font-family:'Inter',sans-serif;font-size:1.5rem;font-weight:700;
+            letter-spacing:-0.05em;color:#fff;">{n_clust}</div>
+        </div>""", unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"""
+        <div style="padding:16px 18px;border-top:1px solid #131825;
+          border-bottom:1px solid #131825;background:#07090f;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.54rem;font-weight:600;
+            letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;margin-bottom:5px;">
+            Positive</div>
+          <div style="font-family:'Inter',sans-serif;font-size:1.5rem;font-weight:700;
+            letter-spacing:-0.05em;color:#00e5a0;">{pos_pct}%</div>
+        </div>""", unsafe_allow_html=True)
+    with k4:
+        st.markdown(f"""
+        <div style="padding:16px 18px;border:1px solid #131825;
+          border-left:none;background:#07090f;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.54rem;font-weight:600;
+            letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;margin-bottom:5px;">
+            Negative</div>
+          <div style="font-family:'Inter',sans-serif;font-size:1.5rem;font-weight:700;
+            letter-spacing:-0.05em;color:#ff6b6b;">{neg_pct}%</div>
+        </div>""", unsafe_allow_html=True)
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    # Charts — 3:2 split so bar has room for labels
+    # ── Charts row — left border panel / right border panel ──
     col_bar, col_donut = st.columns([3, 2])
     with col_bar:
-        st.plotly_chart(plot_topic_bar(result),      use_container_width=True, config={"displayModeBar": False})
+        st.markdown("""<div style="border:1px solid #131825;border-top:none;
+          border-right:none;padding:0;">""", unsafe_allow_html=True)
+        st.plotly_chart(
+            plot_topic_bar(result),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
     with col_donut:
-        st.plotly_chart(plot_sentiment_donut(result), use_container_width=True, config={"displayModeBar": False})
+        st.markdown("""<div style="border:1px solid #131825;border-top:none;
+          padding:0;">""", unsafe_allow_html=True)
+        st.plotly_chart(
+            plot_sentiment_donut(result),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    # ── Digest header ──
+    st.markdown("""
+    <div style="padding:10px 0;border-top:1px solid #131825;
+      display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;font-weight:600;
+        color:#2e3a50;letter-spacing:0.1em;text-transform:uppercase;">
+        Clustered news digest</span>
+    </div>""", unsafe_allow_html=True)
 
-    # Section label
-    st.markdown("""<p style="font-family:'Spline Sans Mono',monospace;font-size:0.65rem;
-      font-weight:600;color:#6C8EFF;letter-spacing:0.14em;text-transform:uppercase;
-      margin-bottom:1rem;">Clustered News Digest</p>""", unsafe_allow_html=True)
-
-    # Digest — rendered in an iframe-like component to avoid markdown sanitizer
+    # ── Digest ──
     digest_html, est_height = build_digest_html(result, filters)
     components.html(digest_html, height=est_height, scrolling=True)
 
 else:
-    # Empty state
+    # ── Empty state ──
     st.markdown("""
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-      padding:5rem 2rem;border:1px dashed #1c2030;border-radius:16px;
-      background:#0d0f17;margin-top:0.5rem;text-align:center;">
-      <div style="width:56px;height:56px;border-radius:14px;
-        background:rgba(108,142,255,0.1);border:1px solid rgba(108,142,255,0.2);
+      padding:5rem 2rem;border:1px dashed #131825;border-radius:12px;
+      background:#0a0d17;margin-top:1rem;text-align:center;">
+      <div style="width:50px;height:50px;border-radius:11px;
+        background:rgba(0,229,160,0.07);border:1px solid rgba(0,229,160,0.16);
         display:flex;align-items:center;justify-content:center;
-        font-size:1.6rem;margin-bottom:1.25rem;">⚡</div>
-      <p style="font-family:'Outfit',sans-serif;font-size:1.1rem;font-weight:700;
-        color:#EEF0F8;margin-bottom:0.5rem;">Ready to pulse</p>
-      <p style="font-family:'Outfit',sans-serif;font-size:0.88rem;color:#4A5568;
-        max-width:380px;line-height:1.65;">
+        font-size:1.35rem;margin-bottom:1rem;">⚡</div>
+      <p style="font-family:'Inter',sans-serif;font-size:0.95rem;font-weight:700;
+        color:#dde4f0;margin-bottom:0.4rem;letter-spacing:-0.02em;">Ready to pulse</p>
+      <p style="font-family:'Inter',sans-serif;font-size:0.82rem;color:#2e3a50;
+        max-width:320px;line-height:1.65;">
         Type a topic in the sidebar, paste URLs, or hit
-        <span style="color:#94A3B8;font-weight:500;">Top Headlines</span>
+        <span style="color:#6b7d99;font-weight:500;">Top Headlines</span>
         to analyze the latest news.
       </p>
     </div>""", unsafe_allow_html=True)
