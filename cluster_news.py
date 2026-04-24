@@ -12,8 +12,12 @@ from sklearn.decomposition import LatentDirichletAllocation
 import hdbscan
 import umap
 
+@st.cache_resource
+def load_embedding_model():
+    return SentenceTransformer('all-MiniLM-L6-v2')
+    
 def generate_embeddings(df, content_column):
-    model = SentenceTransformer('all-MiniLM-L6-v2')
+    model = load_embedding_model()
     embeddings = model.encode(df[content_column].tolist(), show_progress_bar=True)
     return np.array(embeddings)
 
