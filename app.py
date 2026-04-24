@@ -656,10 +656,10 @@ with st.sidebar:
     )
 
     st.markdown("""
-        <p style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;
-          letter-spacing:0.12em;text-transform:uppercase;color:#6b7d99;
-          margin:14px 0 8px;">Filter</p>
-            """, unsafe_allow_html=True)
+    <p style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;
+      letter-spacing:0.12em;text-transform:uppercase;color:#6b7d99;
+      margin:14px 0 8px;">Filter</p>
+    """, unsafe_allow_html=True)
 
     if "sentiment_filters" not in st.session_state:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
@@ -670,97 +670,118 @@ with st.sidebar:
         "Negative": {"on_bg": "rgba(255,107,107,0.15)", "on_border": "#ff6b6b", "on_color": "#ff6b6b"},
     }
 
-    # ── Render pills as real HTML inside components.html ──────────────────────
-    # This avoids ALL Streamlit button styling fights.
-    # Clicking a pill fires postMessage → caught below by st.query_params trick.
-    # We use a hidden st.button per label as the actual click target via JS .click().
+    import json
 
-    active_set = st.session_state.sentiment_filters
+    # Render pills entirely in HTML/JS — no Streamlit buttons at all.
+    # State is stored in sessionStorage and synced to a hidden st.text_input.
+    # Generate Digest / Top Headlines read from st.session_state.sentiment_filters
+    # which gets updated via the hidden input on any pill toggle.
 
-    pill_html = ""
-    for label, cfg in SENT_TOGGLE_CFG.items():
-        active = label in active_set
-        bg     = cfg["on_bg"]     if active else "transparent"
-        border = cfg["on_border"] if active else "#2e3a50"
-        color  = cfg["on_color"]  if active else "#3d4f6a"
-        opacity = "1" if active else "0.5"
-        glow   = f"0 0 6px {cfg['on_border']}55, 0 0 0 1px {cfg['on_border']}" if active else "none"
-        checkmark = "✓ " if active else ""
-        pill_html += f"""
-        <button onclick="toggle('{label}')" style="
-          background:{bg};
-          border:1px solid {border};
-          color:{color};
-          border-radius:20px;
-          font-family:'JetBrains Mono',monospace;
-          font-size:0.68rem;
-          font-weight:600;
-          padding:4px 13px;
-          cursor:pointer;
-          letter-spacing:0.04em;
-          opacity:{opacity};
-          box-shadow:{glow};
-          transition:all 0.15s ease;
-          white-space:nowrap;
-        ">{checkmark}{label}</button>
-        """
+    pill_defs = json.dumps({
+        label: {
+            "on_bg":     cfg["on_bg"],
+            "on_border": cfg["on_border"],
+            "on_color":  cfg["on_color"],
+        }
+        for label, cfg in SENT_TOGGLE_CFG.items()
+    })
+    initial_active = json.dumps(st.session_state.sentiment_filters)
 
     components.html(f"""
-    <div style="display:flex;flex-wrap:wrap;gap:7px;padding:2px 0 4px;">
-      {pill_html}
-    </div>
+    <div id="pill-row" style="display:flex;flex-wrap:wrap;gap:7px;padding:2px 0 4px;"></div>
     <script>
-    function toggle(label) {{
-      // Find the hidden Streamlit button with matching text and click it
-      var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-      if (!sidebar) return;
-      var btns = sidebar.querySelectorAll('button[data-testid="baseButton-secondary"]');
-      btns.forEach(function(btn) {{
-        if (btn.getAttribute('data-pill-label') === label) {{
-          btn.click();
-        }}
-      }});
-    }}
-    // Tag the hidden buttons so we can find them
-    (function tagButtons() {{
-      var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-      if (!sidebar) {{ setTimeout(tagButtons, 50); return; }}
-      var labels = {list(SENT_TOGGLE_CFG.keys())};
-      var btns = sidebar.querySelectorAll('button[data-testid="baseButton-secondary"]');
-      var found = 0;
-      btns.forEach(function(btn) {{
-        labels.forEach(function(lbl) {{
-          if (btn.innerText.trim() === lbl) {{
-            btn.setAttribute('data-pill-label', lbl);
-            btn.style.setProperty('position', 'absolute', 'important');
-            btn.style.setProperty('opacity', '0', 'important');
-            btn.style.setProperty('pointer-events', 'none', 'important');
-            btn.style.setProperty('width', '1px', 'important');
-            btn.style.setProperty('height', '1px', 'important');
-            btn.style.setProperty('overflow', 'hidden', 'important');
-            found++;
+    (function() {{
+      var cfg     = {pill_defs};
+      var active  = {initial_active};
+      var labels  = Object.keys(cfg);
+
+      function render() {{
+        var row = document.getElementById('pill-row');
+        row.innerHTML = '';
+        labels.forEach(function(label) {{
+          var isActive = active.indexOf(label) !== -1;
+          var c = cfg[label];
+          var btn = document.createElement('button');
+          btn.textContent = (isActive ? '✓ ' : '') + label;
+          btn.style.cssText = [
+            'background:'    + (isActive ? c.on_bg     : 'transparent'),
+            'border:1px solid ' + (isActive ? c.on_border : '#2e3a50'),
+            'color:'         + (isActive ? c.on_color  : '#3d4f6a'),
+            'border-radius:20px',
+            'font-family:\\'JetBrains Mono\\',monospace',
+            'font-size:0.68rem',
+            'font-weight:600',
+            'padding:4px 13px',
+            'cursor:pointer',
+            'letter-spacing:0.04em',
+            'opacity:' + (isActive ? '1' : '0.45'),
+            'box-shadow:' + (isActive ? '0 0 0 2px ' + c.on_border : 'none'),
+            'transition:all 0.15s ease',
+            'white-space:nowrap',
+          ].join(';');
+          btn.addEventListener('click', function() {{
+            var idx = active.indexOf(label);
+            if (idx !== -1) {{
+              if (active.length > 1) active.splice(idx, 1);
+            }} else {{
+              active.push(label);
+            }}
+            render();
+            syncToStreamlit();
+          }});
+          row.appendChild(btn);
+        }});
+      }}
+
+      function syncToStreamlit() {{
+        // Write active filters into the hidden Streamlit text input
+        var parent = window.parent.document;
+        var inputs = parent.querySelectorAll('[data-testid="stSidebar"] input[type="text"]');
+        inputs.forEach(function(inp) {{
+          if (inp.getAttribute('data-filter-sync') === 'true') {{
+            var nativeInput = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, 'value');
+            nativeInput.set.call(inp, active.join(','));
+            inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
           }}
         }});
-      }});
-      if (found < labels.length) setTimeout(tagButtons, 50);
+      }}
+
+      render();
     }})();
     </script>
     """, height=52)
 
-    # Hidden real Streamlit buttons — these do the actual state toggle on click
-    # Visually hidden by JS above; logically functional
-    _hcols = st.columns(3)
-    for i, (label, cfg) in enumerate(SENT_TOGGLE_CFG.items()):
-        active = label in st.session_state.sentiment_filters
-        with _hcols[i]:
-            if st.button(label, key=f"tag_{label}", use_container_width=False):
-                if active:
-                    if len(st.session_state.sentiment_filters) > 1:
-                        st.session_state.sentiment_filters.remove(label)
-                else:
-                    st.session_state.sentiment_filters.append(label)
-                st.session_state.active_filters = list(st.session_state.sentiment_filters)
-                st.rerun()
+    # Hidden text input that receives the comma-separated active filter list from JS
+    filter_sync_val = st.text_input(
+        "filter_sync",
+        value=",".join(st.session_state.sentiment_filters),
+        key="filter_sync",
+        label_visibility="collapsed",
+    )
+    # Tag it for JS to find
+    components.html("""
+    <script>
+    (function() {{
+      function tag() {{
+        var parent = window.parent.document;
+        var inputs = parent.querySelectorAll('[data-testid="stSidebar"] input[type="text"]');
+        inputs.forEach(function(inp) {{
+          if (inp.placeholder === '' && inp.getAttribute('data-filter-sync') !== 'true') {{
+            inp.setAttribute('data-filter-sync', 'true');
+            inp.style.display = 'none';
+          }}
+        }});
+      }}
+      setTimeout(tag, 200);
+    }})();
+    </script>
+    """, height=0)
+
+    # Parse synced value back into session state (no rerun needed)
+    if filter_sync_val:
+        parsed = [f.strip() for f in filter_sync_val.split(",") if f.strip() in SENT_TOGGLE_CFG]
+        if parsed:
+            st.session_state.sentiment_filters = parsed
 
     sentiment_filters = list(st.session_state.sentiment_filters)
     
