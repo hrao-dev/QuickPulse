@@ -782,11 +782,11 @@ with st.sidebar:
 
     # Parse synced value back into session state (no rerun needed)
     if filter_sync_val:
-        parsed = [f.strip() for f in filter_sync_val.split(",") if f.strip() in SENT_TOGGLE_CFG]
-        if parsed:
-            st.session_state.sentiment_filters = parsed
+    parsed = [f.strip() for f in filter_sync_val.split(",") if f.strip() in SENT_TOGGLE_CFG]
+    if parsed:
+        st.session_state.sentiment_filters = parsed
 
-    sentiment_filters = list(st.session_state.sentiment_filters)
+    sentiment_filters = [f.strip() for f in filter_sync_val.split(",") if f.strip() in SENT_TOGGLE_CFG] if filter_sync_val else list(st.session_state.sentiment_filters)
     
     run_btn       = st.button("Generate Digest", use_container_width=True, type="secondary")
     headlines_btn = st.button("Top Headlines",   use_container_width=True, type="secondary")
