@@ -665,63 +665,28 @@ with st.sidebar:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
 
     SENT_TOGGLE_CFG = {
-        "Positive": {"on_bg": "rgba(0,229,160,0.15)",   "on_border": "#00e5a0",   "on_color": "#00e5a0"},
-        "Neutral":  {"on_bg": "rgba(107,125,153,0.15)", "on_border": "#6b7d99",   "on_color": "#6b7d99"},
-        "Negative": {"on_bg": "rgba(255,107,107,0.15)", "on_border": "#ff6b6b",   "on_color": "#ff6b6b"},
+        "Positive": {"on_bg": "rgba(0,229,160,0.15)",   "on_border": "#00e5a0", "on_color": "#00e5a0"},
+        "Neutral":  {"on_bg": "rgba(107,125,153,0.15)", "on_border": "#6b7d99", "on_color": "#6b7d99"},
+        "Negative": {"on_bg": "rgba(255,107,107,0.15)", "on_border": "#ff6b6b", "on_color": "#ff6b6b"},
     }
 
-    # Build per-pill CSS with active glow + inactive muted state
-    pill_styles = ""
-    for i, (label, cfg) in enumerate(SENT_TOGGLE_CFG.items(), start=1):
-        active = label in st.session_state.sentiment_filters
-        bg      = cfg["on_bg"]     if active else "transparent"
-        border  = cfg["on_border"] if active else "#2e3a50"
-        color   = cfg["on_color"]  if active else "#3d4f6a"
-        shadow  = f"0 0 0 1px {cfg['on_border']}" if active else "none"
-        pill_styles += f"""
-        [data-testid="stSidebar"] .pill-row > div[data-testid="column"]:nth-child({i}) .stButton > button {{
-          background: {bg} !important;
-          border: 1px solid {border} !important;
-          color: {color} !important;
-          box-shadow: {shadow} !important;
-          opacity: {'1.0' if active else '0.45'} !important;
-        }}
-        [data-testid="stSidebar"] .pill-row > div[data-testid="column"]:nth-child({i}) .stButton > button:hover {{
-          background: {cfg["on_bg"]} !important;
-          border-color: {cfg["on_border"]} !important;
-          color: {cfg["on_color"]} !important;
-          opacity: 1.0 !important;
-          box-shadow: 0 0 0 1px {cfg["on_border"]} !important;
-        }}
-        """
-
-    st.markdown(f"""
+    # Shared pill shape CSS (injected once)
+    st.markdown("""
     <style>
-    /* Topic input — more prominent border */
-    [data-testid="stSidebar"] [data-testid="stTextInput"] input {{
-      border: 1px solid #3d4f6a !important;
-      border-radius: 8px !important;
-    }}
-    [data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {{
-      border: 1px solid rgba(0,229,160,0.6) !important;
-      box-shadow: 0 0 0 1px rgba(0,229,160,0.2) !important;
-    }}
-    /* Pill row layout */
-    [data-testid="stSidebar"] .pill-row {{
+    [data-testid="stSidebar"] .pill-row {
       display: flex !important;
       flex-direction: row !important;
       flex-wrap: wrap !important;
       gap: 6px !important;
       align-items: center !important;
-    }}
-    [data-testid="stSidebar"] .pill-row > div[data-testid="column"] {{
+    }
+    [data-testid="stSidebar"] .pill-row > div[data-testid="column"] {
       flex: 0 0 auto !important;
       width: auto !important;
       min-width: 0 !important;
       padding: 0 !important;
-    }}
-    /* Base pill shape */
-    [data-testid="stSidebar"] .pill-row .stButton > button {{
+    }
+    [data-testid="stSidebar"] .pill-row .stButton > button {
       border-radius: 20px !important;
       font-family: 'JetBrains Mono', monospace !important;
       font-size: 0.68rem !important;
@@ -734,8 +699,15 @@ with st.sidebar:
       white-space: nowrap !important;
       letter-spacing: 0.03em !important;
       transition: all 0.15s ease !important;
-    }}
-    {pill_styles}
+    }
+    /* Topic input border */
+    [data-testid="stSidebar"] [data-testid="stTextInput"] input {
+      border: 1px solid #3d4f6a !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {
+      border: 1px solid rgba(0,229,160,0.6) !important;
+      box-shadow: 0 0 0 1px rgba(0,229,160,0.2) !important;
+    }
     </style>
     <div class="pill-row">
     """, unsafe_allow_html=True)
@@ -754,6 +726,57 @@ with st.sidebar:
                 st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+    # JS styler — runs fresh every rerun, directly sets inline styles on each pill button
+    import json
+    pill_js_cfg = {
+        label: {
+            "active":     label in st.session_state.sentiment_filters,
+            "on_bg":      cfg["on_bg"],
+            "on_border":  cfg["on_border"],
+            "on_color":   cfg["on_color"],
+        }
+        for label, cfg in SENT_TOGGLE_CFG.items()
+    }
+    components.html(f"""
+    <script>
+    (function() {{
+      var cfg = {json.dumps(pill_js_cfg)};
+      function apply() {{
+        var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+        if (!sidebar) return false;
+        var btns = sidebar.querySelectorAll('.pill-row .stButton > button');
+        var matched = 0;
+        btns.forEach(function(btn) {{
+          var label = btn.innerText.trim();
+          if (!cfg[label]) return;
+          var c = cfg[label];
+          if (c.active) {{
+            btn.style.setProperty('background',   c.on_bg,     'important');
+            btn.style.setProperty('border-color', c.on_border, 'important');
+            btn.style.setProperty('color',        c.on_color,  'important');
+            btn.style.setProperty('box-shadow',   '0 0 0 1px ' + c.on_border, 'important');
+            btn.style.setProperty('opacity',      '1',         'important');
+          }} else {{
+            btn.style.setProperty('background',   'transparent', 'important');
+            btn.style.setProperty('border-color', '#2e3a50',     'important');
+            btn.style.setProperty('color',        '#3d4f6a',     'important');
+            btn.style.setProperty('box-shadow',   'none',        'important');
+            btn.style.setProperty('opacity',      '0.5',         'important');
+          }}
+          matched++;
+        }});
+        return matched === Object.keys(cfg).length;
+      }}
+      var tries = 0;
+      var t = setInterval(function() {{
+        if (apply() || tries++ > 60) clearInterval(t);
+      }}, 50);
+    }})();
+    </script>
+    """, height=0)
+
+    sentiment_filters = list(st.session_state.sentiment_filters)
     
     run_btn       = st.button("Generate Digest", use_container_width=True, type="secondary")
     headlines_btn = st.button("Top Headlines",   use_container_width=True, type="secondary")
