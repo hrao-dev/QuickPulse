@@ -632,9 +632,9 @@ with st.sidebar:
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    run_btn       = st.button("⚡  Generate Digest", use_container_width=True, type="primary")
-    headlines_btn = st.button("✦  Top Headlines",   use_container_width=True, type="secondary")
-    clear_btn     = st.button("✕  Clear",            use_container_width=True, type="secondary")
+    run_btn       = st.button("Generate Digest", use_container_width=True, type="primary")
+    headlines_btn = st.button("Top Headlines",   use_container_width=True, type="secondary")
+    clear_btn     = st.button("Clear",            use_container_width=True, type="secondary")
 
     st.markdown("""
     <div style="margin-top:2rem;padding-top:20px;border-top:1px solid #131825;">
