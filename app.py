@@ -79,7 +79,7 @@ html, body, [class*="st-"], .stApp {
 [data-testid="stTextInput"] input,
 [data-testid="stTextArea"] textarea {
   background: var(--bg2) !important;
-  border: 1px solid var(--rim2) !important;
+  border: 1px solid #2e3a50 !important;
   border-radius: 8px !important;
   color: var(--hi) !important;
   font-family: var(--font) !important;
@@ -647,6 +647,9 @@ with st.sidebar:
 
     if "sentiment_filters" not in st.session_state:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
+        st.session_state["chk_Positive"] = True
+        st.session_state["chk_Neutral"]  = True
+        st.session_state["chk_Negative"] = True
 
     SENT_TOGGLE_CFG = {
         "Positive": {"color": "#00e5a0", "bg": "rgba(0,229,160,0.10)",   "border": "rgba(0,229,160,0.30)"},
