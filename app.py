@@ -1,7 +1,5 @@
 """
-QuickPulse — Streamlit Edition (v3 Refined)
-Matches the refined dark mockup: #07090f base, #00e5a0 accent, Inter + JetBrains Mono.
-CSV download removed.
+QuickPulse
 """
 
 import streamlit as st
@@ -137,9 +135,10 @@ html, body, [class*="st-"], .stApp {
 }
 .stButton > button[data-testid="baseButton-primary"] {
   background: var(--acc) !important;
-  color: #020408 !important;
+  color: #ffffff !important;
   border: none !important;
   font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
 }
 .stButton > button[data-testid="baseButton-primary"]:hover {
   background: #00ffb3 !important;
@@ -633,15 +632,9 @@ with st.sidebar:
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    run_btn = st.button("Generate Digest", use_container_width=True, type="primary")
-
-    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-
-    col_h, col_c = st.columns(2)
-    with col_h:
-        headlines_btn = st.button("Top Headlines", use_container_width=True, type="secondary")
-    with col_c:
-        clear_btn = st.button("Clear", use_container_width=True, type="secondary")
+    run_btn       = st.button("Generate Digest", use_container_width=True, type="primary")
+    headlines_btn = st.button("Top Headlines",   use_container_width=True, type="secondary")
+    clear_btn     = st.button("Clear",           use_container_width=True, type="secondary")
 
     st.markdown("""
     <div style="margin-top:2rem;padding-top:20px;border-top:1px solid #131825;">
