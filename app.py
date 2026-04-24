@@ -455,7 +455,7 @@ def build_digest_html(result, sentiment_filters=None):
         </svg>
         Summary
       </summary>
-      <p style="font-family:Inter,sans-serif;font-size:0.72rem;color:#6b7d99;
+      <p style="font-family:Inter,sans-serif;font-size:0.72rem;color:#b0bcd4;
         line-height:1.6;margin:7px 0 0;padding:8px 10px;
         background:{cfg["lbg"]};border-left:2px solid {cfg["lbdr"]};
         border-radius:0 5px 5px 0;">{_esc(art.get("summary",""))}</p>
@@ -625,10 +625,14 @@ with st.sidebar:
       </span>
     </div>""", unsafe_allow_html=True)
 
+    if "topic_input" not in st.session_state:
+        st.session_state.topic_input = ""
+
     topic_input = st.text_input(
         "Topic",
         placeholder="e.g. quantum computing",
         help="Leave blank for top headlines.",
+        key="topic_input",
     )
 
     sentiment_filters = st.multiselect(
@@ -664,6 +668,7 @@ with st.sidebar:
 if clear_btn:
     st.session_state.result         = None
     st.session_state.active_filters = None
+    st.session_state.topic_input    = ""
     st.rerun()
 
 articles = []
