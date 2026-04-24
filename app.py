@@ -130,7 +130,7 @@ html, body, [class*="st-"], .stApp {
   font-weight: 600 !important;
   font-size: 0.82rem !important;
   border-radius: 8px !important;
-  padding: 9px 12px !important;
+  padding: 11px 12px !important;
   transition: all 0.15s ease !important;
   width: 100% !important;
   letter-spacing: 0.01em !important;
@@ -428,9 +428,9 @@ def build_digest_html(result, sentiment_filters=None):
 <div class="arow" style="display:flex;align-items:flex-start;gap:10px;
   padding:9px 18px;border-top:1px solid #0d1120;">
   <div style="flex:1;min-width:0;">
-    <p style="font-family:Inter,sans-serif;font-size:0.75rem;color:#b0bcd4;
+    <p style="font-family:Inter,sans-serif;font-size:0.75rem;color:#dde4f0;
       line-height:1.5;margin:0 0 3px;">{_esc(art.get("title","Untitled"))}</p>
-    <p style="font-family:Inter,sans-serif;font-size:0.65rem;color:#2e3a50;margin:0 0 5px;">
+    <p style="font-family:Inter,sans-serif;font-size:0.65rem;color:#6b7d99;margin:0 0 5px;">
       {_esc(art.get("source","Unknown"))}</p>
     <details style="margin-bottom:5px;">
       <summary style="font-family:Inter,sans-serif;font-size:0.65rem;font-weight:500;
@@ -449,10 +449,10 @@ def build_digest_html(result, sentiment_filters=None):
     </details>
     <a href="{_esc(art.get("url","#"))}" target="_blank"
       style="font-family:Inter,sans-serif;font-size:0.65rem;font-weight:500;
-      color:#1e2a3e;text-decoration:none;display:inline-flex;align-items:center;gap:3px;">
+      color:#6b7d99;text-decoration:none;display:inline-flex;align-items:center;gap:3px;">
       Read article
       <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-        <path d="M2 8L8 2M8 2H4M8 2V6" stroke="#1e2a3e" stroke-width="1.5"
+        <path d="M2 8L8 2M8 2H4M8 2V6" stroke="#6b7d99" stroke-width="1.5"
           stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </a>
@@ -474,7 +474,8 @@ def build_digest_html(result, sentiment_filters=None):
 </div>""")
 
         cards.append(f"""
-<div style="border-bottom:1px solid #131825;">
+<div style="border:1px solid #1a2332;border-top:2px solid {tag["color"]};
+  border-radius:8px;margin-bottom:14px;overflow:hidden;">
   <div style="display:flex;align-items:center;gap:9px;padding:11px 18px;background:#0a0d17;">
     <span style="font-size:0.58rem;font-weight:700;letter-spacing:0.07em;
       text-transform:uppercase;padding:3px 8px;border-radius:5px;
@@ -630,18 +631,24 @@ with st.sidebar:
             placeholder="https://…\nhttps://…",
         )
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    run_btn       = st.button("Generate Digest", use_container_width=True, type="primary")
-    headlines_btn = st.button("Top Headlines",   use_container_width=True, type="secondary")
-    clear_btn     = st.button("Clear",            use_container_width=True, type="secondary")
+    run_btn = st.button("Generate Digest", use_container_width=True, type="primary")
+
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+    col_h, col_c = st.columns(2)
+    with col_h:
+        headlines_btn = st.button("Top Headlines", use_container_width=True, type="secondary")
+    with col_c:
+        clear_btn = st.button("Clear", use_container_width=True, type="secondary")
 
     st.markdown("""
     <div style="margin-top:2rem;padding-top:20px;border-top:1px solid #131825;">
       <p style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;
-        color:#1a2030;line-height:2;letter-spacing:0.04em;">
+        color:#3d4f6a;line-height:2;letter-spacing:0.04em;">
         Powered by<br>
-        <span style="color:#2e3a50;">NewsAPI · HDBSCAN<br>FlanT5 · BART-MNLI<br>
+        <span style="color:#4a5e7a;">NewsAPI · HDBSCAN<br>FlanT5 · BART-MNLI<br>
         sentence-transformers</span>
       </p>
     </div>""", unsafe_allow_html=True)
