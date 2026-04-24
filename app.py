@@ -155,6 +155,14 @@ html, body, [class*="st-"], .stApp {
   border: 1px solid var(--rim2) !important;
   text-align: left !important;
 }
+.stButton:first-of-type > button[data-testid="baseButton-secondary"] {
+  color: #ffffff !important;
+  border-color: #2e3a50 !important;
+}
+.stButton:first-of-type > button[data-testid="baseButton-secondary"] p,
+.stButton:first-of-type > button[data-testid="baseButton-secondary"] span {
+  color: #ffffff !important;
+}
 .stButton > button[data-testid="baseButton-secondary"]:hover {
   border-color: var(--dim) !important;
   color: var(--mid) !important;
@@ -638,7 +646,7 @@ with st.sidebar:
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    run_btn       = st.button("Generate Digest", use_container_width=True, type="primary")
+    run_btn       = st.button("Generate Digest", use_container_width=True, type="secondary")
     headlines_btn = st.button("Top Headlines",   use_container_width=True, type="secondary")
     clear_btn     = st.button("Clear",           use_container_width=True, type="secondary")
 
