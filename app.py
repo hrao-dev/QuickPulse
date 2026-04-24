@@ -656,8 +656,8 @@ with st.sidebar:
     )
 
     st.markdown("""
-    <p style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;font-weight:600;
-      letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;
+    <p style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;
+      letter-spacing:0.12em;text-transform:uppercase;color:#6b7d99;
       margin:14px 0 7px;">Filter</p>
     """, unsafe_allow_html=True)
 
@@ -665,34 +665,48 @@ with st.sidebar:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
 
     SENT_TOGGLE_CFG = {
-        "Positive": {"on_bg": "rgba(0,229,160,0.12)",   "on_border": "rgba(0,229,160,0.35)",   "on_color": "#00e5a0"},
-        "Neutral":  {"on_bg": "rgba(107,125,153,0.12)", "on_border": "rgba(107,125,153,0.35)", "on_color": "#6b7d99"},
-        "Negative": {"on_bg": "rgba(255,107,107,0.12)", "on_border": "rgba(255,107,107,0.35)", "on_color": "#ff6b6b"},
+        "Positive": {"on_bg": "rgba(0,229,160,0.15)",   "on_border": "#00e5a0",   "on_color": "#00e5a0"},
+        "Neutral":  {"on_bg": "rgba(107,125,153,0.15)", "on_border": "#6b7d99",   "on_color": "#6b7d99"},
+        "Negative": {"on_bg": "rgba(255,107,107,0.15)", "on_border": "#ff6b6b",   "on_color": "#ff6b6b"},
     }
 
-    # Per-pill color CSS (nth-child targeting each column)
+    # Build per-pill CSS with active glow + inactive muted state
     pill_styles = ""
     for i, (label, cfg) in enumerate(SENT_TOGGLE_CFG.items(), start=1):
         active = label in st.session_state.sentiment_filters
-        bg     = cfg["on_bg"]     if active else "transparent"
-        border = cfg["on_border"] if active else "#1a2030"
-        color  = cfg["on_color"]  if active else "#3d4f6a"
+        bg      = cfg["on_bg"]     if active else "transparent"
+        border  = cfg["on_border"] if active else "#2e3a50"
+        color   = cfg["on_color"]  if active else "#3d4f6a"
+        shadow  = f"0 0 0 1px {cfg['on_border']}" if active else "none"
         pill_styles += f"""
         [data-testid="stSidebar"] .pill-row > div[data-testid="column"]:nth-child({i}) .stButton > button {{
           background: {bg} !important;
           border: 1px solid {border} !important;
           color: {color} !important;
+          box-shadow: {shadow} !important;
+          opacity: {'1.0' if active else '0.45'} !important;
         }}
         [data-testid="stSidebar"] .pill-row > div[data-testid="column"]:nth-child({i}) .stButton > button:hover {{
           background: {cfg["on_bg"]} !important;
           border-color: {cfg["on_border"]} !important;
           color: {cfg["on_color"]} !important;
-          opacity: 0.85;
+          opacity: 1.0 !important;
+          box-shadow: 0 0 0 1px {cfg["on_border"]} !important;
         }}
         """
 
     st.markdown(f"""
     <style>
+    /* Topic input — more prominent border */
+    [data-testid="stSidebar"] [data-testid="stTextInput"] input {{
+      border: 1px solid #3d4f6a !important;
+      border-radius: 8px !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {{
+      border: 1px solid rgba(0,229,160,0.6) !important;
+      box-shadow: 0 0 0 1px rgba(0,229,160,0.2) !important;
+    }}
+    /* Pill row layout */
     [data-testid="stSidebar"] .pill-row {{
       display: flex !important;
       flex-direction: row !important;
@@ -706,6 +720,7 @@ with st.sidebar:
       min-width: 0 !important;
       padding: 0 !important;
     }}
+    /* Base pill shape */
     [data-testid="stSidebar"] .pill-row .stButton > button {{
       border-radius: 20px !important;
       font-family: 'JetBrains Mono', monospace !important;
@@ -735,23 +750,11 @@ with st.sidebar:
                         st.session_state.sentiment_filters.remove(label)
                 else:
                     st.session_state.sentiment_filters.append(label)
-                # ── KEY FIX: immediately sync active_filters so digest re-renders ──
                 st.session_state.active_filters = list(st.session_state.sentiment_filters)
                 st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-    sentiment_filters = st.session_state.sentiment_filters  
-
-    with st.expander("Batch URL input"):
-        urls_input = st.text_area(
-            "URLs — one per line",
-            height=90,
-            placeholder="https://…\nhttps://…",
-        )
-
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-
+    
     run_btn       = st.button("Generate Digest", use_container_width=True, type="secondary")
     headlines_btn = st.button("Top Headlines",   use_container_width=True, type="secondary")
     clear_btn     = st.button("Clear",           use_container_width=True, type="secondary")
@@ -801,7 +804,7 @@ if headlines_btn:
 
 # ── Results ───────────────────────────────────────────────────────────────────
 result  = st.session_state.result
-filters = st.session_state.active_filters or sentiment_filters
+filters = list(st.session_state.sentiment_filters)
 
 if result is not None:
     df_res  = result["dataframe"]
