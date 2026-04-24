@@ -676,123 +676,67 @@ with st.sidebar:
         "Negative": {"on_bg": "rgba(255,107,107,0.15)", "on_border": "#ff6b6b", "on_color": "#ff6b6b"},
     }
 
-    import json
+    # Pill styling — CSS driven by current session state (re-evaluated each render)
+    pos_active = "Positive" in st.session_state.sentiment_filters
+    neu_active = "Neutral"  in st.session_state.sentiment_filters
+    neg_active = "Negative" in st.session_state.sentiment_filters
 
-    # Render pills entirely in HTML/JS — no Streamlit buttons at all.
-    # State is stored in sessionStorage and synced to a hidden st.text_input.
-    # Generate Digest / Top Headlines read from st.session_state.sentiment_filters
-    # which gets updated via the hidden input on any pill toggle.
+    st.markdown(f"""
+    <style>
+    /* Base pill shape */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] .stButton > button {{
+        border-radius: 20px !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-size: 0.68rem !important;
+        font-weight: 600 !important;
+        padding: 4px 13px !important;
+        min-height: 0 !important;
+        height: auto !important;
+        line-height: 1.5 !important;
+        letter-spacing: 0.04em !important;
+        width: auto !important;
+        transition: all 0.15s ease !important;
+    }}
+    /* Positive */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] div:nth-child(1) .stButton > button {{
+        background: {"rgba(0,229,160,0.15)"   if pos_active else "transparent"} !important;
+        border-color: {"#00e5a0"              if pos_active else "#2e3a50"} !important;
+        color: {"#00e5a0"                     if pos_active else "#3d4f6a"} !important;
+        opacity: {"1"                         if pos_active else "0.45"} !important;
+        box-shadow: {"0 0 0 2px #00e5a0"      if pos_active else "none"} !important;
+    }}
+    /* Neutral */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] div:nth-child(2) .stButton > button {{
+        background: {"rgba(107,125,153,0.15)" if neu_active else "transparent"} !important;
+        border-color: {"#6b7d99"              if neu_active else "#2e3a50"} !important;
+        color: {"#b0bcd4"                     if neu_active else "#3d4f6a"} !important;
+        opacity: {"1"                         if neu_active else "0.45"} !important;
+        box-shadow: {"0 0 0 2px #6b7d99"      if neu_active else "none"} !important;
+    }}
+    /* Negative */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] div:nth-child(3) .stButton > button {{
+        background: {"rgba(255,107,107,0.15)" if neg_active else "transparent"} !important;
+        border-color: {"#ff6b6b"              if neg_active else "#2e3a50"} !important;
+        color: {"#ff6b6b"                     if neg_active else "#3d4f6a"} !important;
+        opacity: {"1"                         if neg_active else "0.45"} !important;
+        box-shadow: {"0 0 0 2px #ff6b6b"      if neg_active else "none"} !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
 
-    pill_defs = json.dumps({
-        label: {
-            "on_bg":     cfg["on_bg"],
-            "on_border": cfg["on_border"],
-            "on_color":  cfg["on_color"],
-        }
-        for label, cfg in SENT_TOGGLE_CFG.items()
-    })
-    initial_active = json.dumps(st.session_state.sentiment_filters)
+    pcol1, pcol2, pcol3 = st.columns(3)
+    for col, label in zip([pcol1, pcol2, pcol3], ["Positive", "Neutral", "Negative"]):
+        is_active = label in st.session_state.sentiment_filters
+        with col:
+            if st.button(("✓ " if is_active else "") + label, key=f"pill_{label}", use_container_width=False):
+                if is_active:
+                    if len(st.session_state.sentiment_filters) > 1:
+                        st.session_state.sentiment_filters.remove(label)
+                else:
+                    st.session_state.sentiment_filters.append(label)
+                st.rerun()
 
-    components.html(f"""
-    <div id="pill-row" style="display:flex;flex-wrap:wrap;gap:7px;padding:2px 0 4px;"></div>
-    <script>
-    (function() {{
-      var cfg     = {pill_defs};
-      var active  = {initial_active};
-      var labels  = Object.keys(cfg);
-
-      function render() {{
-        var row = document.getElementById('pill-row');
-        row.innerHTML = '';
-        labels.forEach(function(label) {{
-          var isActive = active.indexOf(label) !== -1;
-          var c = cfg[label];
-          var btn = document.createElement('button');
-          btn.textContent = (isActive ? '✓ ' : '') + label;
-          btn.style.cssText = [
-            'background:'    + (isActive ? c.on_bg     : 'transparent'),
-            'border:1px solid ' + (isActive ? c.on_border : '#2e3a50'),
-            'color:'         + (isActive ? c.on_color  : '#3d4f6a'),
-            'border-radius:20px',
-            'font-family:\\'JetBrains Mono\\',monospace',
-            'font-size:0.68rem',
-            'font-weight:600',
-            'padding:4px 13px',
-            'cursor:pointer',
-            'letter-spacing:0.04em',
-            'opacity:' + (isActive ? '1' : '0.45'),
-            'box-shadow:' + (isActive ? '0 0 0 2px ' + c.on_border : 'none'),
-            'transition:all 0.15s ease',
-            'white-space:nowrap',
-          ].join(';');
-          btn.addEventListener('click', function() {{
-            var idx = active.indexOf(label);
-            if (idx !== -1) {{
-              if (active.length > 1) active.splice(idx, 1);
-            }} else {{
-              active.push(label);
-            }}
-            render();
-            syncToStreamlit();
-          }});
-          row.appendChild(btn);
-        }});
-      }}
-
-      function syncToStreamlit() {{
-        // Write active filters into the hidden Streamlit text input
-        var parent = window.parent.document;
-        var inputs = parent.querySelectorAll('[data-testid="stSidebar"] input[type="text"]');
-        inputs.forEach(function(inp) {{
-          if (inp.getAttribute('data-filter-sync') === 'true') {{
-            var nativeInput = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, 'value');
-            nativeInput.set.call(inp, active.join(','));
-            inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-          }}
-        }});
-      }}
-
-      render();
-    }})();
-    </script>
-    """, height=72)
-
-    # Hidden text input that receives the comma-separated active filter list from JS
-    filter_sync_val = st.text_input(
-        "filter_sync",
-        value=",".join(st.session_state.sentiment_filters),
-        key="filter_sync",
-        label_visibility="collapsed",
-        help="",
-    )
-    # Tag it for JS to find
-    components.html("""
-    <script>
-    (function() {{
-      function tag() {{
-        var parent = window.parent.document;
-        var inputs = parent.querySelectorAll('[data-testid="stSidebar"] input[type="text"]');
-        inputs.forEach(function(inp) {{
-          if (inp.placeholder === '' && inp.getAttribute('data-filter-sync') !== 'true') {{
-            inp.setAttribute('data-filter-sync', 'true');
-            var wrapper = inp.closest('[data-testid="stTextInput"]');
-            if (wrapper) wrapper.style.display = 'none';
-            else inp.style.display = 'none';
-          }}
-        }});
-      }}
-      setTimeout(tag, 200);
-    }})();
-    </script>
-    """, height=0)
-
-    # Parse synced value back into session state (no rerun needed)
-    if filter_sync_val:
-        parsed = [f.strip() for f in filter_sync_val.split(",") if f.strip() in SENT_TOGGLE_CFG]
-        if parsed:
-            st.session_state.sentiment_filters = parsed
-
-    sentiment_filters = [f.strip() for f in filter_sync_val.split(",") if f.strip() in SENT_TOGGLE_CFG] if filter_sync_val else list(st.session_state.sentiment_filters)
+    sentiment_filters = list(st.session_state.sentiment_filters)
     
     run_btn       = st.button("Generate Digest", use_container_width=True, type="secondary")
     headlines_btn = st.button("Top Headlines",   use_container_width=True, type="secondary")
