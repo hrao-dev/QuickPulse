@@ -169,6 +169,22 @@ html, body, [class*="st-"], .stApp {
   background: rgba(255,255,255,0.02) !important;
 }
 
+/* Sentiment toggle buttons — invisible click layer over the pills */
+[data-testid="stButton"] button[kind="secondary"]:is(
+  [data-testid*="sent_tog_Positive"],
+  [data-testid*="sent_tog_Neutral"],
+  [data-testid*="sent_tog_Negative"]
+) {
+  opacity: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: -42px 0 6px !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 1 !important;
+}
+
 /* ── Expander ── */
 details summary {
   font-family: var(--font) !important;
@@ -198,16 +214,6 @@ details > div {
 ::-webkit-scrollbar-track { background: var(--bg0); }
 ::-webkit-scrollbar-thumb { background: var(--rim2); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
-
-button[kind="secondary"][data-testid*="sent_tog_"] {
-  height: 0 !important;
-  padding: 0 !important;
-  margin: -5px 0 5px !important;
-  opacity: 0 !important;
-  pointer-events: auto !important;
-  position: relative !important;
-  top: -36px !important;
-}
 
 /* ── Misc ── */
 .stSpinner > div { border-top-color: var(--acc) !important; }
@@ -645,7 +651,7 @@ with st.sidebar:
         key="topic_input",
     )
 
-    st.markdown("""
+        st.markdown("""
     <p style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;font-weight:600;
       letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;margin-bottom:8px;">
       Sentiment Filter</p>
@@ -654,38 +660,38 @@ with st.sidebar:
     if "sentiment_filters" not in st.session_state:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
 
-    SENT_COLORS = {
-        "Positive": "#00e5a0",
-        "Neutral":  "#6b7d99",
-        "Negative": "#ff6b6b",
+    SENT_TOGGLE_CFG = {
+        "Positive": {"color": "#00e5a0", "bg": "rgba(0,229,160,0.10)",   "border": "rgba(0,229,160,0.30)"},
+        "Neutral":  {"color": "#6b7d99", "bg": "rgba(107,125,153,0.10)", "border": "rgba(107,125,153,0.28)"},
+        "Negative": {"color": "#ff6b6b", "bg": "rgba(255,107,107,0.10)", "border": "rgba(255,107,107,0.28)"},
     }
 
-    for label in ["Positive", "Neutral", "Negative"]:
-        active  = label in st.session_state.sentiment_filters
-        color   = SENT_COLORS[label]
-        bg      = f"rgba({','.join(str(int(color.lstrip('#')[i:i+2],16)) for i in (0,2,4))},0.12)" if active else "transparent"
-        border  = color if active else "#1a2030"
-        txt_col = color if active else "#3d4f6a"
-        dot     = f'<span style="width:6px;height:6px;border-radius:50%;background:{color};display:inline-block;margin-right:6px;opacity:{"1" if active else "0.3"};"></span>'
+    for label, cfg in SENT_TOGGLE_CFG.items():
+        active     = label in st.session_state.sentiment_filters
+        bg         = cfg["bg"]    if active else "transparent"
+        border     = cfg["border"] if active else "#1a2030"
+        text_color = cfg["color"] if active else "#2e3a50"
+        dot_opacity = "1"         if active else "0.25"
+        checkmark  = "✓"          if active else ""
 
         st.markdown(f"""
         <div style="display:flex;align-items:center;justify-content:space-between;
           background:{bg};border:1px solid {border};border-radius:8px;
-          padding:7px 11px;margin-bottom:5px;cursor:pointer;">
-          <span style="font-family:'Inter',sans-serif;font-size:0.78rem;
-            font-weight:500;color:{txt_col};display:flex;align-items:center;">
-            {dot}{label}</span>
-          <span style="font-size:0.65rem;color:{txt_col};font-weight:600;">
-            {"✓" if active else ""}</span>
+          padding:9px 12px;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;gap:8px;
+            font-family:'Inter',sans-serif;font-size:0.78rem;font-weight:500;color:{text_color};">
+            <div style="width:7px;height:7px;border-radius:50%;
+              background:{cfg['color']};opacity:{dot_opacity};flex-shrink:0;"></div>
+            {label}
+          </div>
+          <span style="font-size:0.65rem;font-weight:600;color:{cfg['color']};
+            width:14px;text-align:center;">{checkmark}</span>
         </div>""", unsafe_allow_html=True)
 
-        if st.button(
-            f"{'On' if active else 'Off'}",
-            key=f"sent_tog_{label}",
-            use_container_width=True,
-        ):
+        if st.button(label, key=f"sent_tog_{label}", use_container_width=True):
             if active:
-                st.session_state.sentiment_filters.remove(label)
+                if len(st.session_state.sentiment_filters) > 1:
+                    st.session_state.sentiment_filters.remove(label)
             else:
                 st.session_state.sentiment_filters.append(label)
             st.rerun()
