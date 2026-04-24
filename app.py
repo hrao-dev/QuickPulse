@@ -614,19 +614,28 @@ for key in ("result", "active_filters"):
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
-    <div style="margin-bottom:22px;">
-      <div style="font-family:'Inter',sans-serif;font-size:1.05rem;font-weight:700;
-        letter-spacing:-0.04em;color:#fff;margin-bottom:7px;">
-        Quick<em style="font-style:normal;color:#00e5a0;">Pulse</em>
+    <div style="margin-bottom:22px;display:flex;align-items:center;gap:11px;">
+      <div style="width:36px;height:36px;border-radius:9px;flex-shrink:0;
+        background:rgba(0,229,160,0.12);border:1px solid rgba(0,229,160,0.25);
+        display:flex;align-items:center;justify-content:center;">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="3.5" fill="#00e5a0"/>
+          <path d="M9 1v3M9 14v3M1 9h3M14 9h3" stroke="#00e5a0"
+            stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M3.5 3.5l2 2M12.5 12.5l2 2M12.5 3.5l-2 2M5.5 12.5l-2 2"
+            stroke="#00e5a0" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+        </svg>
       </div>
-      <span style="display:inline-flex;align-items:center;gap:5px;
-        font-family:'JetBrains Mono',monospace;font-size:0.56rem;font-weight:500;
-        color:#00e5a0;background:rgba(0,229,160,0.07);
-        border:1px solid rgba(0,229,160,0.18);border-radius:20px;padding:3px 9px;">
-        <span style="width:5px;height:5px;border-radius:50%;background:#00e5a0;
-          display:inline-block;"></span>
-        live · multi-source
-      </span>
+      <div>
+        <div style="font-family:'Inter',sans-serif;font-size:1rem;font-weight:700;
+          letter-spacing:-0.04em;color:#fff;line-height:1.2;">
+          Quick<em style="font-style:normal;color:#00e5a0;">Pulse</em>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;
+          color:#2e3a50;letter-spacing:0.06em;margin-top:2px;">
+          LIVE · MULTI-SOURCE
+        </div>
+      </div>
     </div>""", unsafe_allow_html=True)
 
     if "topic_input" not in st.session_state:
@@ -647,10 +656,7 @@ with st.sidebar:
 
     if "sentiment_filters" not in st.session_state:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
-        st.session_state["chk_Positive"] = True
-        st.session_state["chk_Neutral"]  = True
-        st.session_state["chk_Negative"] = True
-
+        
     SENT_TOGGLE_CFG = {
         "Positive": {"color": "#00e5a0", "bg": "rgba(0,229,160,0.10)",   "border": "rgba(0,229,160,0.30)"},
         "Neutral":  {"color": "#6b7d99", "bg": "rgba(107,125,153,0.10)", "border": "rgba(107,125,153,0.28)"},
@@ -680,7 +686,9 @@ with st.sidebar:
             color:{cfg['color']};width:14px;text-align:center;">{checkmark}</span>
         </div>""", unsafe_allow_html=True)
 
-        new_val = st.checkbox(label, value=active, key=f"chk_{label}", label_visibility="collapsed")
+        if f"chk_{label}" not in st.session_state:
+            st.session_state[f"chk_{label}"] = True
+        new_val = st.checkbox(label, key=f"chk_{label}", label_visibility="collapsed")
         if new_val != active:
             if not new_val and len(st.session_state.sentiment_filters) > 1:
                 st.session_state.sentiment_filters.remove(label)
