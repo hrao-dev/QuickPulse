@@ -749,7 +749,7 @@ with st.sidebar:
       render();
     }})();
     </script>
-    """, height=52)
+    """, height=72)
 
     # Hidden text input that receives the comma-separated active filter list from JS
     filter_sync_val = st.text_input(
@@ -757,6 +757,7 @@ with st.sidebar:
         value=",".join(st.session_state.sentiment_filters),
         key="filter_sync",
         label_visibility="collapsed",
+        help="",
     )
     # Tag it for JS to find
     components.html("""
@@ -768,7 +769,9 @@ with st.sidebar:
         inputs.forEach(function(inp) {{
           if (inp.placeholder === '' && inp.getAttribute('data-filter-sync') !== 'true') {{
             inp.setAttribute('data-filter-sync', 'true');
-            inp.style.display = 'none';
+            var wrapper = inp.closest('[data-testid="stTextInput"]');
+            if (wrapper) wrapper.style.display = 'none';
+            else inp.style.display = 'none';
           }}
         }});
       }}
