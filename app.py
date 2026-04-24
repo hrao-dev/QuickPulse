@@ -169,22 +169,10 @@ html, body, [class*="st-"], .stApp {
   background: rgba(255,255,255,0.02) !important;
 }
 
-/* Sentiment toggle buttons — invisible click layer over the pills */
-[data-testid="stButton"] button[kind="secondary"]:is(
-  [data-testid*="sent_tog_Positive"],
-  [data-testid*="sent_tog_Neutral"],
-  [data-testid*="sent_tog_Negative"]
-) {
-  opacity: 0 !important;
-  height: 0 !important;
-  min-height: 0 !important;
-  padding: 0 !important;
-  margin: -42px 0 6px !important;
-  pointer-events: auto !important;
-  position: relative !important;
-  z-index: 1 !important;
+/* ── Sentiment filter checkboxes — hidden, state read programmatically ── */
+[data-testid="stCheckbox"] {
+  display: none !important;
 }
-
 /* ── Expander ── */
 details summary {
   font-family: var(--font) !important;
@@ -653,8 +641,8 @@ with st.sidebar:
 
     st.markdown("""
     <p style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;font-weight:600;
-      letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;margin-bottom:8px;">
-      Sentiment Filter</p>
+      letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;
+      margin:0 0 8px;">Sentiment Filter</p>
     """, unsafe_allow_html=True)
 
     if "sentiment_filters" not in st.session_state:
@@ -667,36 +655,37 @@ with st.sidebar:
     }
 
     for label, cfg in SENT_TOGGLE_CFG.items():
-        active     = label in st.session_state.sentiment_filters
-        bg         = cfg["bg"]    if active else "transparent"
+        active = label in st.session_state.sentiment_filters
+        bg         = cfg["bg"]     if active else "transparent"
         border     = cfg["border"] if active else "#1a2030"
-        text_color = cfg["color"] if active else "#2e3a50"
-        dot_opacity = "1"         if active else "0.25"
-        checkmark  = "✓"          if active else ""
+        text_color = cfg["color"]  if active else "#2e3a50"
+        dot_op     = "1"           if active else "0.25"
+        checkmark  = "✓"           if active else ""
 
         st.markdown(f"""
         <div style="display:flex;align-items:center;justify-content:space-between;
           background:{bg};border:1px solid {border};border-radius:8px;
-          padding:9px 12px;margin-bottom:6px;">
+          padding:9px 12px;margin-bottom:6px;cursor:pointer;">
           <div style="display:flex;align-items:center;gap:8px;
-            font-family:'Inter',sans-serif;font-size:0.78rem;font-weight:500;color:{text_color};">
-            <div style="width:7px;height:7px;border-radius:50%;
-              background:{cfg['color']};opacity:{dot_opacity};flex-shrink:0;"></div>
+            font-family:'Inter',sans-serif;font-size:0.78rem;
+            font-weight:500;color:{text_color};">
+            <div style="width:7px;height:7px;border-radius:50%;flex-shrink:0;
+              background:{cfg['color']};opacity:{dot_op};"></div>
             {label}
           </div>
-          <span style="font-size:0.65rem;font-weight:600;color:{cfg['color']};
-            width:14px;text-align:center;">{checkmark}</span>
+          <span style="font-size:0.65rem;font-weight:600;
+            color:{cfg['color']};width:14px;text-align:center;">{checkmark}</span>
         </div>""", unsafe_allow_html=True)
 
-        if st.button(label, key=f"sent_tog_{label}", use_container_width=True):
-            if active:
-                if len(st.session_state.sentiment_filters) > 1:
-                    st.session_state.sentiment_filters.remove(label)
-            else:
+        new_val = st.checkbox(label, value=active, key=f"chk_{label}", label_visibility="collapsed")
+        if new_val != active:
+            if not new_val and len(st.session_state.sentiment_filters) > 1:
+                st.session_state.sentiment_filters.remove(label)
+            elif new_val:
                 st.session_state.sentiment_filters.append(label)
             st.rerun()
 
-    sentiment_filters = st.session_state.sentiment_filters
+    sentiment_filters = st.session_state.sentiment_filters  
 
     with st.expander("Batch URL input"):
         urls_input = st.text_area(
