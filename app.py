@@ -170,9 +170,17 @@ html, body, [class*="st-"], .stApp {
 }
 
 /* ── Sentiment filter checkboxes — hidden, state read programmatically ── */
-[data-testid="stCheckbox"] {
-  display: none !important;
+/* Add this instead: */
+button[key="tag_Positive"],
+button[key="tag_Neutral"],
+button[key="tag_Negative"] {
+  border-radius: 20px !important;
+  font-size: 0.7rem !important;
+  padding: 4px 6px !important;
+  text-align: center !important;
+  min-height: 0 !important;
 }
+
 /* ── Expander ── */
 details summary {
   font-family: var(--font) !important;
@@ -656,33 +664,41 @@ with st.sidebar:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
 
     SENT_TOGGLE_CFG = {
-        "Positive": {"color": "#00e5a0", "bg": "rgba(0,229,160,0.12)",   "border": "rgba(0,229,160,0.30)"},
-        "Neutral":  {"color": "#6b7d99", "bg": "rgba(107,125,153,0.12)", "border": "rgba(107,125,153,0.28)"},
-        "Negative": {"color": "#ff6b6b", "bg": "rgba(255,107,107,0.12)", "border": "rgba(255,107,107,0.28)"},
+        "Positive": {"on_bg": "rgba(0,229,160,0.12)",   "on_border": "rgba(0,229,160,0.30)",   "on_color": "#00e5a0"},
+        "Neutral":  {"on_bg": "rgba(107,125,153,0.12)", "on_border": "rgba(107,125,153,0.28)", "on_color": "#6b7d99"},
+        "Negative": {"on_bg": "rgba(255,107,107,0.12)", "on_border": "rgba(255,107,107,0.28)", "on_color": "#ff6b6b"},
     }
 
     tag_cols = st.columns(3)
     for i, (label, cfg) in enumerate(SENT_TOGGLE_CFG.items()):
         active = label in st.session_state.sentiment_filters
-        bg     = cfg["bg"]     if active else "transparent"
-        border = cfg["border"] if active else "#1a2030"
-        color  = cfg["color"]  if active else "#2e3a50"
+        bg     = cfg["on_bg"]     if active else "transparent"
+        border = cfg["on_border"] if active else "#1a2030"
+        color  = cfg["on_color"]  if active else "#2e3a50"
 
         with tag_cols[i]:
             st.markdown(f"""
-            <div style="background:{bg};border:1px solid {border};
-              border-radius:20px;padding:4px 0;text-align:center;
-              font-family:'Inter',sans-serif;font-size:0.7rem;font-weight:600;
-              color:{color};margin-bottom:2px;cursor:pointer;">
-              {label}</div>""", unsafe_allow_html=True)
+            <style>
+            div[data-testid="stButton"] button[key="tag_{label}"],
+            div[data-testid="stButton"]:has(button[aria-label="{label}"]) button {{
+              background: {bg} !important;
+              border: 1px solid {border} !important;
+              border-radius: 20px !important;
+              color: {color} !important;
+              font-size: 0.7rem !important;
+              font-weight: 600 !important;
+              padding: 4px 6px !important;
+              width: 100% !important;
+              text-align: center !important;
+            }}
+            </style>
+            """, unsafe_allow_html=True)
 
-            if f"chk_{label}" not in st.session_state:
-                st.session_state[f"chk_{label}"] = True
-            new_val = st.checkbox(label, key=f"chk_{label}", label_visibility="collapsed")
-            if new_val != active:
-                if not new_val and len(st.session_state.sentiment_filters) > 1:
-                    st.session_state.sentiment_filters.remove(label)
-                elif new_val:
+            if st.button(label, key=f"tag_{label}", use_container_width=True):
+                if active:
+                    if len(st.session_state.sentiment_filters) > 1:
+                        st.session_state.sentiment_filters.remove(label)
+                else:
                     st.session_state.sentiment_filters.append(label)
                 st.rerun()
 
