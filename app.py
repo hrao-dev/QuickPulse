@@ -596,9 +596,14 @@ def run_pipeline(articles, sentiment_filters):
     deduped   = deduplicate_articles(extracted)
     if not deduped:
         return None
+    
+    if sentiment_filters:
+        deduped = [a for a in deduped if a.get("sentiment", "").capitalize() in sentiment_filters]
+    if not deduped:
+        return None
+
     df = pd.DataFrame(deduped)
     return cluster_news.cluster_and_label_articles(
-        df, content_column="content", summary_column="summary")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
