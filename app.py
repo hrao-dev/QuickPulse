@@ -169,21 +169,17 @@ html, body, [class*="st-"], .stApp {
   background: rgba(255,255,255,0.02) !important;
 }
 
-/* ── Sentiment filter pills — compact pill row ── */
-div[data-testid="stButton"]:has(button[aria-label="tag_Positive"]) button,
-div[data-testid="stButton"]:has(button[aria-label="tag_Neutral"])  button,
-div[data-testid="stButton"]:has(button[aria-label="tag_Negative"]) button {
+/* ── Sentiment filter pills — JS in components.html handles dynamic colors ── */
+/* Base pill shape applied as fallback via CSS */
+[data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type
+  .stButton > button {
   border-radius: 20px !important;
   font-size: 0.72rem !important;
-  padding: 3px 10px !important;
+  font-weight: 600 !important;
+  padding: 4px 10px !important;
   min-height: 0 !important;
-  width: auto !important;
-}
-div[data-testid="stButton"]:has(button[aria-label="tag_Positive"]),
-div[data-testid="stButton"]:has(button[aria-label="tag_Neutral"]),
-div[data-testid="stButton"]:has(button[aria-label="tag_Negative"]) {
-  display: inline-block !important;
-  width: auto !important;
+  height: auto !important;
+  line-height: 1.5 !important;
 }
 
 /* ── Expander ── */
@@ -674,72 +670,86 @@ with st.sidebar:
         "Negative": {"on_bg": "rgba(255,107,107,0.12)", "on_border": "rgba(255,107,107,0.35)", "on_color": "#ff6b6b"},
     }
 
-    # Inject CSS to make the pill buttons render inline in a flex row
-    st.markdown("""
-    <style>
-    /* Wrap the 3 sentiment pill buttons in a horizontal flex row */
-    div[data-testid="stHorizontalBlock"]:has(button[kind="secondary"][data-testid="baseButton-secondary"])
-      + div { display: none; }
-
-    .sentiment-pill-row {
-      display: flex;
-      flex-direction: row;
-      gap: 6px;
-      margin-bottom: 4px;
-    }
-    .sentiment-pill-row > div[data-testid="stButton"] {
-      flex: 0 0 auto !important;
-      width: auto !important;
-    }
-    .sentiment-pill-row > div[data-testid="stButton"] > button {
-      width: auto !important;
-      padding: 3px 10px !important;
-      border-radius: 20px !important;
-      font-size: 0.72rem !important;
-      font-weight: 600 !important;
-      font-family: 'Inter', sans-serif !important;
-      letter-spacing: 0.01em !important;
-      min-height: 0 !important;
-      height: auto !important;
-      line-height: 1.4 !important;
-    }
-    /* Per-pill active colors injected dynamically below */
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown('<div class="sentiment-pill-row">', unsafe_allow_html=True)
-
-    for label, cfg in SENT_TOGGLE_CFG.items():
+    tag_cols = st.columns(3)
+    for i, (label, cfg) in enumerate(SENT_TOGGLE_CFG.items()):
         active = label in st.session_state.sentiment_filters
-        bg     = cfg["on_bg"]     if active else "transparent"
-        border = cfg["on_border"] if active else "#1a2030"
-        color  = cfg["on_color"]  if active else "#3d4f6a"
+        with tag_cols[i]:
+            if st.button(label, key=f"tag_{label}", use_container_width=True):
+                if active:
+                    if len(st.session_state.sentiment_filters) > 1:
+                        st.session_state.sentiment_filters.remove(label)
+                else:
+                    st.session_state.sentiment_filters.append(label)
+                st.rerun()
 
-        st.markdown(f"""
-        <style>
-        .sentiment-pill-row div[data-testid="stButton"]:has(button[aria-label="{label}"]) button,
-        div[data-testid="stButton"]:has(button[aria-label="tag_{label}"]) button {{
-          background: {bg} !important;
-          border: 1px solid {border} !important;
-          color: {color} !important;
-        }}
-        div[data-testid="stButton"]:has(button[aria-label="tag_{label}"]) button:hover {{
-          background: {cfg["on_bg"]} !important;
-          border-color: {cfg["on_border"]} !important;
-          color: {cfg["on_color"]} !important;
-        }}
-        </style>
-        """, unsafe_allow_html=True)
+    # Build JS config for active states so the script can style each pill correctly
+    pill_js_cfg = {
+        label: {
+            "active": label in st.session_state.sentiment_filters,
+            "on_bg": cfg["on_bg"],
+            "on_border": cfg["on_border"],
+            "on_color": cfg["on_color"],
+        }
+        for label, cfg in SENT_TOGGLE_CFG.items()
+    }
+    import json
+    pill_cfg_json = json.dumps(pill_js_cfg)
 
-        if st.button(label, key=f"tag_{label}", use_container_width=False):
-            if active:
-                if len(st.session_state.sentiment_filters) > 1:
-                    st.session_state.sentiment_filters.remove(label)
-            else:
-                st.session_state.sentiment_filters.append(label)
-            st.rerun()
+    # JS runs in parent frame via components.html — finds buttons by text, applies pill styles
+    components.html(f"""
+    <script>
+    (function applyPillStyles() {{
+      var cfg = {pill_cfg_json};
+      var labels = Object.keys(cfg);
 
-    st.markdown('</div>', unsafe_allow_html=True)
+      function styleButtons() {{
+        // Find all buttons in the sidebar
+        var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+        if (!sidebar) return false;
+        var allBtns = sidebar.querySelectorAll('button[data-testid="baseButton-secondary"]');
+        var found = 0;
+        allBtns.forEach(function(btn) {{
+          var txt = btn.innerText.trim();
+          if (cfg[txt]) {{
+            var c = cfg[txt];
+            var bg     = c.active ? c.on_bg     : 'transparent';
+            var border = c.active ? c.on_border  : '#1a2030';
+            var color  = c.active ? c.on_color   : '#3d4f6a';
+            // Pill shape
+            btn.style.setProperty('border-radius', '20px', 'important');
+            btn.style.setProperty('font-size', '0.72rem', 'important');
+            btn.style.setProperty('font-weight', '600', 'important');
+            btn.style.setProperty('padding', '4px 10px', 'important');
+            btn.style.setProperty('min-height', '0', 'important');
+            btn.style.setProperty('height', 'auto', 'important');
+            btn.style.setProperty('line-height', '1.5', 'important');
+            btn.style.setProperty('width', 'auto', 'important');
+            // Active color
+            btn.style.setProperty('background', bg, 'important');
+            btn.style.setProperty('border-color', border, 'important');
+            btn.style.setProperty('color', color, 'important');
+            // Shrink the wrapping column so pills are snug
+            var col = btn.closest('[data-testid="column"]');
+            if (col) {{
+              col.style.setProperty('flex', '0 0 auto', 'important');
+              col.style.setProperty('width', 'auto', 'important');
+              col.style.setProperty('min-width', '0', 'important');
+              col.style.setProperty('padding', '0 3px 0 0', 'important');
+            }}
+            found++;
+          }}
+        }});
+        return found === labels.length;
+      }}
+
+      // Retry until Streamlit has rendered the buttons
+      var attempts = 0;
+      var interval = setInterval(function() {{
+        if (styleButtons() || attempts++ > 40) clearInterval(interval);
+      }}, 80);
+    }})();
+    </script>
+    """, height=0)
 
     sentiment_filters = st.session_state.sentiment_filters  
 
