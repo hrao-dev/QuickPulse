@@ -656,66 +656,103 @@ with st.sidebar:
     )
 
     st.markdown("""
-    <p style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;
-      letter-spacing:0.12em;text-transform:uppercase;color:#6b7d99;
-      margin:14px 0 7px;">Filter</p>
-    """, unsafe_allow_html=True)
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;
+          letter-spacing:0.12em;text-transform:uppercase;color:#6b7d99;
+          margin:14px 0 8px;">Filter</p>
+            """, unsafe_allow_html=True)
 
     if "sentiment_filters" not in st.session_state:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
 
     SENT_TOGGLE_CFG = {
         "Positive": {"on_bg": "rgba(0,229,160,0.15)",   "on_border": "#00e5a0", "on_color": "#00e5a0"},
-        "Neutral":  {"on_bg": "rgba(107,125,153,0.15)", "on_border": "#6b7d99", "on_color": "#6b7d99"},
+        "Neutral":  {"on_bg": "rgba(107,125,153,0.15)", "on_border": "#6b7d99", "on_color": "#b0bcd4"},
         "Negative": {"on_bg": "rgba(255,107,107,0.15)", "on_border": "#ff6b6b", "on_color": "#ff6b6b"},
     }
 
-    # Shared pill shape CSS (injected once)
-    st.markdown("""
-    <style>
-    [data-testid="stSidebar"] .pill-row {
-      display: flex !important;
-      flex-direction: row !important;
-      flex-wrap: wrap !important;
-      gap: 6px !important;
-      align-items: center !important;
-    }
-    [data-testid="stSidebar"] .pill-row > div[data-testid="column"] {
-      flex: 0 0 auto !important;
-      width: auto !important;
-      min-width: 0 !important;
-      padding: 0 !important;
-    }
-    [data-testid="stSidebar"] .pill-row .stButton > button {
-      border-radius: 20px !important;
-      font-family: 'JetBrains Mono', monospace !important;
-      font-size: 0.68rem !important;
-      font-weight: 600 !important;
-      padding: 3px 12px !important;
-      min-height: 0 !important;
-      height: auto !important;
-      line-height: 1.6 !important;
-      width: auto !important;
-      white-space: nowrap !important;
-      letter-spacing: 0.03em !important;
-      transition: all 0.15s ease !important;
-    }
-    /* Topic input border */
-    [data-testid="stSidebar"] [data-testid="stTextInput"] input {
-      border: 1px solid #3d4f6a !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {
-      border: 1px solid rgba(0,229,160,0.6) !important;
-      box-shadow: 0 0 0 1px rgba(0,229,160,0.2) !important;
-    }
-    </style>
-    <div class="pill-row">
-    """, unsafe_allow_html=True)
+    # ── Render pills as real HTML inside components.html ──────────────────────
+    # This avoids ALL Streamlit button styling fights.
+    # Clicking a pill fires postMessage → caught below by st.query_params trick.
+    # We use a hidden st.button per label as the actual click target via JS .click().
 
-    tag_cols = st.columns(3)
+    active_set = st.session_state.sentiment_filters
+
+    pill_html = ""
+    for label, cfg in SENT_TOGGLE_CFG.items():
+        active = label in active_set
+        bg     = cfg["on_bg"]     if active else "transparent"
+        border = cfg["on_border"] if active else "#2e3a50"
+        color  = cfg["on_color"]  if active else "#3d4f6a"
+        opacity = "1" if active else "0.5"
+        glow   = f"0 0 6px {cfg['on_border']}55, 0 0 0 1px {cfg['on_border']}" if active else "none"
+        checkmark = "✓ " if active else ""
+        pill_html += f"""
+        <button onclick="toggle('{label}')" style="
+          background:{bg};
+          border:1px solid {border};
+          color:{color};
+          border-radius:20px;
+          font-family:'JetBrains Mono',monospace;
+          font-size:0.68rem;
+          font-weight:600;
+          padding:4px 13px;
+          cursor:pointer;
+          letter-spacing:0.04em;
+          opacity:{opacity};
+          box-shadow:{glow};
+          transition:all 0.15s ease;
+          white-space:nowrap;
+        ">{checkmark}{label}</button>
+        """
+
+    components.html(f"""
+    <div style="display:flex;flex-wrap:wrap;gap:7px;padding:2px 0 4px;">
+      {pill_html}
+    </div>
+    <script>
+    function toggle(label) {{
+      // Find the hidden Streamlit button with matching text and click it
+      var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+      if (!sidebar) return;
+      var btns = sidebar.querySelectorAll('button[data-testid="baseButton-secondary"]');
+      btns.forEach(function(btn) {{
+        if (btn.getAttribute('data-pill-label') === label) {{
+          btn.click();
+        }}
+      }});
+    }}
+    // Tag the hidden buttons so we can find them
+    (function tagButtons() {{
+      var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+      if (!sidebar) {{ setTimeout(tagButtons, 50); return; }}
+      var labels = {list(SENT_TOGGLE_CFG.keys())};
+      var btns = sidebar.querySelectorAll('button[data-testid="baseButton-secondary"]');
+      var found = 0;
+      btns.forEach(function(btn) {{
+        labels.forEach(function(lbl) {{
+          if (btn.innerText.trim() === lbl) {{
+            btn.setAttribute('data-pill-label', lbl);
+            btn.style.setProperty('position', 'absolute', 'important');
+            btn.style.setProperty('opacity', '0', 'important');
+            btn.style.setProperty('pointer-events', 'none', 'important');
+            btn.style.setProperty('width', '1px', 'important');
+            btn.style.setProperty('height', '1px', 'important');
+            btn.style.setProperty('overflow', 'hidden', 'important');
+            found++;
+          }}
+        }});
+      }});
+      if (found < labels.length) setTimeout(tagButtons, 50);
+    }})();
+    </script>
+    """, height=52)
+
+    # Hidden real Streamlit buttons — these do the actual state toggle on click
+    # Visually hidden by JS above; logically functional
+    _hcols = st.columns(3)
     for i, (label, cfg) in enumerate(SENT_TOGGLE_CFG.items()):
         active = label in st.session_state.sentiment_filters
-        with tag_cols[i]:
+        with _hcols[i]:
             if st.button(label, key=f"tag_{label}", use_container_width=False):
                 if active:
                     if len(st.session_state.sentiment_filters) > 1:
@@ -724,57 +761,6 @@ with st.sidebar:
                     st.session_state.sentiment_filters.append(label)
                 st.session_state.active_filters = list(st.session_state.sentiment_filters)
                 st.rerun()
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # JS styler — runs fresh every rerun, directly sets inline styles on each pill button
-    import json
-    pill_js_cfg = {
-        label: {
-            "active":     label in st.session_state.sentiment_filters,
-            "on_bg":      cfg["on_bg"],
-            "on_border":  cfg["on_border"],
-            "on_color":   cfg["on_color"],
-        }
-        for label, cfg in SENT_TOGGLE_CFG.items()
-    }
-    components.html(f"""
-    <script>
-    (function() {{
-      var cfg = {json.dumps(pill_js_cfg)};
-      function apply() {{
-        var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-        if (!sidebar) return false;
-        var btns = sidebar.querySelectorAll('.pill-row .stButton > button');
-        var matched = 0;
-        btns.forEach(function(btn) {{
-          var label = btn.innerText.trim();
-          if (!cfg[label]) return;
-          var c = cfg[label];
-          if (c.active) {{
-            btn.style.setProperty('background',   c.on_bg,     'important');
-            btn.style.setProperty('border-color', c.on_border, 'important');
-            btn.style.setProperty('color',        c.on_color,  'important');
-            btn.style.setProperty('box-shadow',   '0 0 0 1px ' + c.on_border, 'important');
-            btn.style.setProperty('opacity',      '1',         'important');
-          }} else {{
-            btn.style.setProperty('background',   'transparent', 'important');
-            btn.style.setProperty('border-color', '#2e3a50',     'important');
-            btn.style.setProperty('color',        '#3d4f6a',     'important');
-            btn.style.setProperty('box-shadow',   'none',        'important');
-            btn.style.setProperty('opacity',      '0.5',         'important');
-          }}
-          matched++;
-        }});
-        return matched === Object.keys(cfg).length;
-      }}
-      var tries = 0;
-      var t = setInterval(function() {{
-        if (apply() || tries++ > 60) clearInterval(t);
-      }}, 50);
-    }})();
-    </script>
-    """, height=0)
 
     sentiment_filters = list(st.session_state.sentiment_filters)
     
