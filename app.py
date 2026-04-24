@@ -142,6 +142,12 @@ html, body, [class*="st-"], .stApp {
 }
 .stButton > button[data-testid="baseButton-primary"]:hover {
   background: #00ffb3 !important;
+  color: #ffffff !important;
+}
+.stButton > button[data-testid="baseButton-primary"] p,
+.stButton > button[data-testid="baseButton-primary"] span,
+.stButton > button[data-testid="baseButton-primary"] div {
+  color: #ffffff !important;
 }
 .stButton > button[data-testid="baseButton-secondary"] {
   background: transparent !important;
