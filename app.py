@@ -651,7 +651,7 @@ with st.sidebar:
         key="topic_input",
     )
 
-        st.markdown("""
+    st.markdown("""
     <p style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;font-weight:600;
       letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;margin-bottom:8px;">
       Sentiment Filter</p>
