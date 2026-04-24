@@ -1,8 +1,6 @@
 # cluster_news.py
-# Clusters news articles using HDBSCAN, labels clusters with TF-IDF n-grams and LDA topics,
-# and falls back to a representative summary if the label is too vague.
-
 import streamlit as st
+import numpy as np
 import pandas as pd
 from collections import defaultdict
 from sentence_transformers import SentenceTransformer
