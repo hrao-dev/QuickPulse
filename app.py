@@ -603,7 +603,7 @@ def run_pipeline(articles, sentiment_filters):
         return None
 
     df = pd.DataFrame(deduped)
-    return cluster_news.cluster_and_label_articles(
+    return cluster_news.cluster_and_label_articles
 
 
 # ─────────────────────────────────────────────────────────────────────────────
