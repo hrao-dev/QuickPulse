@@ -670,86 +670,76 @@ with st.sidebar:
         "Negative": {"on_bg": "rgba(255,107,107,0.12)", "on_border": "rgba(255,107,107,0.35)", "on_color": "#ff6b6b"},
     }
 
+    # Per-pill color CSS (nth-child targeting each column)
+    pill_styles = ""
+    for i, (label, cfg) in enumerate(SENT_TOGGLE_CFG.items(), start=1):
+        active = label in st.session_state.sentiment_filters
+        bg     = cfg["on_bg"]     if active else "transparent"
+        border = cfg["on_border"] if active else "#1a2030"
+        color  = cfg["on_color"]  if active else "#3d4f6a"
+        pill_styles += f"""
+        [data-testid="stSidebar"] .pill-row > div[data-testid="column"]:nth-child({i}) .stButton > button {{
+          background: {bg} !important;
+          border: 1px solid {border} !important;
+          color: {color} !important;
+        }}
+        [data-testid="stSidebar"] .pill-row > div[data-testid="column"]:nth-child({i}) .stButton > button:hover {{
+          background: {cfg["on_bg"]} !important;
+          border-color: {cfg["on_border"]} !important;
+          color: {cfg["on_color"]} !important;
+          opacity: 0.85;
+        }}
+        """
+
+    st.markdown(f"""
+    <style>
+    [data-testid="stSidebar"] .pill-row {{
+      display: flex !important;
+      flex-direction: row !important;
+      flex-wrap: wrap !important;
+      gap: 6px !important;
+      align-items: center !important;
+    }}
+    [data-testid="stSidebar"] .pill-row > div[data-testid="column"] {{
+      flex: 0 0 auto !important;
+      width: auto !important;
+      min-width: 0 !important;
+      padding: 0 !important;
+    }}
+    [data-testid="stSidebar"] .pill-row .stButton > button {{
+      border-radius: 20px !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 0.68rem !important;
+      font-weight: 600 !important;
+      padding: 3px 12px !important;
+      min-height: 0 !important;
+      height: auto !important;
+      line-height: 1.6 !important;
+      width: auto !important;
+      white-space: nowrap !important;
+      letter-spacing: 0.03em !important;
+      transition: all 0.15s ease !important;
+    }}
+    {pill_styles}
+    </style>
+    <div class="pill-row">
+    """, unsafe_allow_html=True)
+
     tag_cols = st.columns(3)
     for i, (label, cfg) in enumerate(SENT_TOGGLE_CFG.items()):
         active = label in st.session_state.sentiment_filters
         with tag_cols[i]:
-            if st.button(label, key=f"tag_{label}", use_container_width=True):
+            if st.button(label, key=f"tag_{label}", use_container_width=False):
                 if active:
                     if len(st.session_state.sentiment_filters) > 1:
                         st.session_state.sentiment_filters.remove(label)
                 else:
                     st.session_state.sentiment_filters.append(label)
+                # ── KEY FIX: immediately sync active_filters so digest re-renders ──
+                st.session_state.active_filters = list(st.session_state.sentiment_filters)
                 st.rerun()
 
-    # Build JS config for active states so the script can style each pill correctly
-    pill_js_cfg = {
-        label: {
-            "active": label in st.session_state.sentiment_filters,
-            "on_bg": cfg["on_bg"],
-            "on_border": cfg["on_border"],
-            "on_color": cfg["on_color"],
-        }
-        for label, cfg in SENT_TOGGLE_CFG.items()
-    }
-    import json
-    pill_cfg_json = json.dumps(pill_js_cfg)
-
-    # JS runs in parent frame via components.html — finds buttons by text, applies pill styles
-    components.html(f"""
-    <script>
-    (function applyPillStyles() {{
-      var cfg = {pill_cfg_json};
-      var labels = Object.keys(cfg);
-
-      function styleButtons() {{
-        // Find all buttons in the sidebar
-        var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-        if (!sidebar) return false;
-        var allBtns = sidebar.querySelectorAll('button[data-testid="baseButton-secondary"]');
-        var found = 0;
-        allBtns.forEach(function(btn) {{
-          var txt = btn.innerText.trim();
-          if (cfg[txt]) {{
-            var c = cfg[txt];
-            var bg     = c.active ? c.on_bg     : 'transparent';
-            var border = c.active ? c.on_border  : '#1a2030';
-            var color  = c.active ? c.on_color   : '#3d4f6a';
-            // Pill shape
-            btn.style.setProperty('border-radius', '20px', 'important');
-            btn.style.setProperty('font-size', '0.72rem', 'important');
-            btn.style.setProperty('font-weight', '600', 'important');
-            btn.style.setProperty('padding', '4px 10px', 'important');
-            btn.style.setProperty('min-height', '0', 'important');
-            btn.style.setProperty('height', 'auto', 'important');
-            btn.style.setProperty('line-height', '1.5', 'important');
-            btn.style.setProperty('width', 'auto', 'important');
-            // Active color
-            btn.style.setProperty('background', bg, 'important');
-            btn.style.setProperty('border-color', border, 'important');
-            btn.style.setProperty('color', color, 'important');
-            // Shrink the wrapping column so pills are snug
-            var col = btn.closest('[data-testid="column"]');
-            if (col) {{
-              col.style.setProperty('flex', '0 0 auto', 'important');
-              col.style.setProperty('width', 'auto', 'important');
-              col.style.setProperty('min-width', '0', 'important');
-              col.style.setProperty('padding', '0 3px 0 0', 'important');
-            }}
-            found++;
-          }}
-        }});
-        return found === labels.length;
-      }}
-
-      // Retry until Streamlit has rendered the buttons
-      var attempts = 0;
-      var interval = setInterval(function() {{
-        if (styleButtons() || attempts++ > 40) clearInterval(interval);
-      }}, 80);
-    }})();
-    </script>
-    """, height=0)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     sentiment_filters = st.session_state.sentiment_filters  
 
