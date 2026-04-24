@@ -169,16 +169,21 @@ html, body, [class*="st-"], .stApp {
   background: rgba(255,255,255,0.02) !important;
 }
 
-/* ── Sentiment filter checkboxes — hidden, state read programmatically ── */
-/* Add this instead: */
-button[key="tag_Positive"],
-button[key="tag_Neutral"],
-button[key="tag_Negative"] {
+/* ── Sentiment filter pills — compact pill row ── */
+div[data-testid="stButton"]:has(button[aria-label="tag_Positive"]) button,
+div[data-testid="stButton"]:has(button[aria-label="tag_Neutral"])  button,
+div[data-testid="stButton"]:has(button[aria-label="tag_Negative"]) button {
   border-radius: 20px !important;
-  font-size: 0.7rem !important;
-  padding: 4px 6px !important;
-  text-align: center !important;
+  font-size: 0.72rem !important;
+  padding: 3px 10px !important;
   min-height: 0 !important;
+  width: auto !important;
+}
+div[data-testid="stButton"]:has(button[aria-label="tag_Positive"]),
+div[data-testid="stButton"]:has(button[aria-label="tag_Neutral"]),
+div[data-testid="stButton"]:has(button[aria-label="tag_Negative"]) {
+  display: inline-block !important;
+  width: auto !important;
 }
 
 /* ── Expander ── */
@@ -664,43 +669,77 @@ with st.sidebar:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
 
     SENT_TOGGLE_CFG = {
-        "Positive": {"on_bg": "rgba(0,229,160,0.12)",   "on_border": "rgba(0,229,160,0.30)",   "on_color": "#00e5a0"},
-        "Neutral":  {"on_bg": "rgba(107,125,153,0.12)", "on_border": "rgba(107,125,153,0.28)", "on_color": "#6b7d99"},
-        "Negative": {"on_bg": "rgba(255,107,107,0.12)", "on_border": "rgba(255,107,107,0.28)", "on_color": "#ff6b6b"},
+        "Positive": {"on_bg": "rgba(0,229,160,0.12)",   "on_border": "rgba(0,229,160,0.35)",   "on_color": "#00e5a0"},
+        "Neutral":  {"on_bg": "rgba(107,125,153,0.12)", "on_border": "rgba(107,125,153,0.35)", "on_color": "#6b7d99"},
+        "Negative": {"on_bg": "rgba(255,107,107,0.12)", "on_border": "rgba(255,107,107,0.35)", "on_color": "#ff6b6b"},
     }
 
-    tag_cols = st.columns(3)
-    for i, (label, cfg) in enumerate(SENT_TOGGLE_CFG.items()):
+    # Inject CSS to make the pill buttons render inline in a flex row
+    st.markdown("""
+    <style>
+    /* Wrap the 3 sentiment pill buttons in a horizontal flex row */
+    div[data-testid="stHorizontalBlock"]:has(button[kind="secondary"][data-testid="baseButton-secondary"])
+      + div { display: none; }
+
+    .sentiment-pill-row {
+      display: flex;
+      flex-direction: row;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    .sentiment-pill-row > div[data-testid="stButton"] {
+      flex: 0 0 auto !important;
+      width: auto !important;
+    }
+    .sentiment-pill-row > div[data-testid="stButton"] > button {
+      width: auto !important;
+      padding: 3px 10px !important;
+      border-radius: 20px !important;
+      font-size: 0.72rem !important;
+      font-weight: 600 !important;
+      font-family: 'Inter', sans-serif !important;
+      letter-spacing: 0.01em !important;
+      min-height: 0 !important;
+      height: auto !important;
+      line-height: 1.4 !important;
+    }
+    /* Per-pill active colors injected dynamically below */
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="sentiment-pill-row">', unsafe_allow_html=True)
+
+    for label, cfg in SENT_TOGGLE_CFG.items():
         active = label in st.session_state.sentiment_filters
         bg     = cfg["on_bg"]     if active else "transparent"
         border = cfg["on_border"] if active else "#1a2030"
-        color  = cfg["on_color"]  if active else "#2e3a50"
+        color  = cfg["on_color"]  if active else "#3d4f6a"
 
-        with tag_cols[i]:
-            st.markdown(f"""
-            <style>
-            div[data-testid="stButton"] button[key="tag_{label}"],
-            div[data-testid="stButton"]:has(button[aria-label="{label}"]) button {{
-              background: {bg} !important;
-              border: 1px solid {border} !important;
-              border-radius: 20px !important;
-              color: {color} !important;
-              font-size: 0.7rem !important;
-              font-weight: 600 !important;
-              padding: 4px 6px !important;
-              width: 100% !important;
-              text-align: center !important;
-            }}
-            </style>
-            """, unsafe_allow_html=True)
+        st.markdown(f"""
+        <style>
+        .sentiment-pill-row div[data-testid="stButton"]:has(button[aria-label="{label}"]) button,
+        div[data-testid="stButton"]:has(button[aria-label="tag_{label}"]) button {{
+          background: {bg} !important;
+          border: 1px solid {border} !important;
+          color: {color} !important;
+        }}
+        div[data-testid="stButton"]:has(button[aria-label="tag_{label}"]) button:hover {{
+          background: {cfg["on_bg"]} !important;
+          border-color: {cfg["on_border"]} !important;
+          color: {cfg["on_color"]} !important;
+        }}
+        </style>
+        """, unsafe_allow_html=True)
 
-            if st.button(label, key=f"tag_{label}", use_container_width=True):
-                if active:
-                    if len(st.session_state.sentiment_filters) > 1:
-                        st.session_state.sentiment_filters.remove(label)
-                else:
-                    st.session_state.sentiment_filters.append(label)
-                st.rerun()
+        if st.button(label, key=f"tag_{label}", use_container_width=False):
+            if active:
+                if len(st.session_state.sentiment_filters) > 1:
+                    st.session_state.sentiment_filters.remove(label)
+            else:
+                st.session_state.sentiment_filters.append(label)
+            st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     sentiment_filters = st.session_state.sentiment_filters  
 
