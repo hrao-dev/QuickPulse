@@ -837,7 +837,7 @@ if headlines_btn:
 
 # ── Results ───────────────────────────────────────────────────────────────────
 result  = st.session_state.result
-filters = list(st.session_state.sentiment_filters)
+filters = list(st.session_state.active_filters or st.session_state.sentiment_filters)
 
 if result is not None:
     df_res  = result["dataframe"]
@@ -920,7 +920,7 @@ if result is not None:
     </div>""", unsafe_allow_html=True)
 
     # ── Digest ──
-    digest_html, est_height = build_digest_html(result, filters)
+    digest_html, est_height = build_digest_html(result, st.session_state.active_filters or filters)
     components.html(digest_html, height=est_height, scrolling=True)
 
 else:
