@@ -199,6 +199,16 @@ details > div {
 ::-webkit-scrollbar-thumb { background: var(--rim2); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
 
+button[kind="secondary"][data-testid*="sent_tog_"] {
+  height: 0 !important;
+  padding: 0 !important;
+  margin: -5px 0 5px !important;
+  opacity: 0 !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  top: -36px !important;
+}
+
 /* ── Misc ── */
 .stSpinner > div { border-top-color: var(--acc) !important; }
 .stAlert {
@@ -635,11 +645,52 @@ with st.sidebar:
         key="topic_input",
     )
 
-    sentiment_filters = st.multiselect(
-        "Sentiment Filter",
-        options=["Positive", "Neutral", "Negative"],
-        default=["Positive", "Neutral", "Negative"],
-    )
+    st.markdown("""
+    <p style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;font-weight:600;
+      letter-spacing:0.1em;text-transform:uppercase;color:#2e3a50;margin-bottom:8px;">
+      Sentiment Filter</p>
+    """, unsafe_allow_html=True)
+
+    if "sentiment_filters" not in st.session_state:
+        st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
+
+    SENT_COLORS = {
+        "Positive": "#00e5a0",
+        "Neutral":  "#6b7d99",
+        "Negative": "#ff6b6b",
+    }
+
+    for label in ["Positive", "Neutral", "Negative"]:
+        active  = label in st.session_state.sentiment_filters
+        color   = SENT_COLORS[label]
+        bg      = f"rgba({','.join(str(int(color.lstrip('#')[i:i+2],16)) for i in (0,2,4))},0.12)" if active else "transparent"
+        border  = color if active else "#1a2030"
+        txt_col = color if active else "#3d4f6a"
+        dot     = f'<span style="width:6px;height:6px;border-radius:50%;background:{color};display:inline-block;margin-right:6px;opacity:{"1" if active else "0.3"};"></span>'
+
+        st.markdown(f"""
+        <div style="display:flex;align-items:center;justify-content:space-between;
+          background:{bg};border:1px solid {border};border-radius:8px;
+          padding:7px 11px;margin-bottom:5px;cursor:pointer;">
+          <span style="font-family:'Inter',sans-serif;font-size:0.78rem;
+            font-weight:500;color:{txt_col};display:flex;align-items:center;">
+            {dot}{label}</span>
+          <span style="font-size:0.65rem;color:{txt_col};font-weight:600;">
+            {"✓" if active else ""}</span>
+        </div>""", unsafe_allow_html=True)
+
+        if st.button(
+            f"{'On' if active else 'Off'}",
+            key=f"sent_tog_{label}",
+            use_container_width=True,
+        ):
+            if active:
+                st.session_state.sentiment_filters.remove(label)
+            else:
+                st.session_state.sentiment_filters.append(label)
+            st.rerun()
+
+    sentiment_filters = st.session_state.sentiment_filters
 
     with st.expander("Batch URL input"):
         urls_input = st.text_area(
@@ -668,7 +719,8 @@ with st.sidebar:
 if clear_btn:
     st.session_state.result         = None
     st.session_state.active_filters = None
-    st.session_state.topic_input    = ""
+    if "topic_input" in st.session_state:
+        del st.session_state["topic_input"]
     st.rerun()
 
 articles = []
