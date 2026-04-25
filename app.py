@@ -665,115 +665,94 @@ with st.sidebar:
     <p style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;
       letter-spacing:0.12em;text-transform:uppercase;color:#6b7d99;
       margin:14px 0 8px;">Filter</p>
-    <div id="qp-filter-anchor"></div>
     """, unsafe_allow_html=True)
 
     if "sentiment_filters" not in st.session_state:
         st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
 
+    # Handle toggle via query param
+    qp = st.query_params.get("toggle_pill", None)
+    if qp and qp in ["Positive", "Neutral", "Negative"]:
+        if qp in st.session_state.sentiment_filters:
+            if len(st.session_state.sentiment_filters) > 1:
+                st.session_state.sentiment_filters.remove(qp)
+        else:
+            st.session_state.sentiment_filters.append(qp)
+        st.query_params.clear()
+        st.rerun()
+
     pos_active = "Positive" in st.session_state.sentiment_filters
     neu_active = "Neutral"  in st.session_state.sentiment_filters
     neg_active = "Negative" in st.session_state.sentiment_filters
 
-    st.markdown(f"""
+    pill_html = f"""
     <style>
-    /* Target filter buttons by key attribute — most reliable selector */
-    [data-testid="stSidebar"] button[kind="secondary"][data-testid="baseButton-secondary"] {{
-        border-radius: 20px !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.6rem !important;
-        font-weight: 600 !important;
-        padding: 5px 16px !important;
-        min-height: 0 !important;
-        height: auto !important;
-        line-height: 1.4 !important;
-        letter-spacing: 0.04em !important;
-        width: auto !important;
-        max-width: fit-content !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        white-space: nowrap !important;
-        transition: all 0.15s ease !important;
-    }}
-    /* Positive */
-    [data-testid="stSidebar"] button[data-testid="baseButton-secondary"][key="pill_Positive"],
-    [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:has(~ [data-testid] [key="pill_Positive"]) {{
-        background: {"rgba(0,229,160,0.15)"   if pos_active else "transparent"} !important;
-        border-color: {"#00e5a0"              if pos_active else "#2e3a50"} !important;
-        color: {"#00e5a0"                     if pos_active else "#3d4f6a"} !important;
-        opacity: {"1"                         if pos_active else "0.5"} !important;
-        box-shadow: {"0 0 0 1px #00e5a0"      if pos_active else "none"} !important;
-    }}
-    /* Neutral */
-    [data-testid="stSidebar"] button[data-testid="baseButton-secondary"][key="pill_Neutral"] {{
-        background: {"rgba(107,125,153,0.15)" if neu_active else "transparent"} !important;
-        border-color: {"#6b7d99"              if neu_active else "#2e3a50"} !important;
-        color: {"#b0bcd4"                     if neu_active else "#3d4f6a"} !important;
-        opacity: {"1"                         if neu_active else "0.5"} !important;
-        box-shadow: {"0 0 0 1px #6b7d99"      if neu_active else "none"} !important;
-    }}
-    /* Negative */
-    [data-testid="stSidebar"] button[data-testid="baseButton-secondary"][key="pill_Negative"] {{
-        background: {"rgba(255,107,107,0.15)" if neg_active else "transparent"} !important;
-        border-color: {"#ff6b6b"              if neg_active else "#2e3a50"} !important;
-        color: {"#ff6b6b"                     if neg_active else "#3d4f6a"} !important;
-        opacity: {"1"                         if neg_active else "0.5"} !important;
-        box-shadow: {"0 0 0 1px #ff6b6b"      if neg_active else "none"} !important;
-    }}
-    /* Layout: row 1 */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[key="pill_Positive"]) {{
-        display: flex !important;
-        flex-wrap: nowrap !important;
-        gap: 8px !important;
-        align-items: center !important;
-        padding: 2px 0 0 0 !important;
-    }}
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[key="pill_Positive"])
-        > div[data-testid="column"] {{
-        flex: 0 0 auto !important;
-        width: auto !important;
-        padding: 0 !important;
-    }}
-    /* Layout: row 2 — Negative centered */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[key="pill_Negative"]) {{
-        display: flex !important;
-        justify-content: center !important;
-        gap: 8px !important;
-        padding: 6px 0 8px !important;
-    }}
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[key="pill_Negative"])
-        > div[data-testid="column"] {{
-        flex: 0 0 auto !important;
-        width: auto !important;
-        padding: 0 !important;
-    }}
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600&display=swap');
+      body {{ margin:0; background: transparent; }}
+      .pill-wrap {{
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }}
+      .pill-row {{
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }}
+      .pill-row.center {{ justify-content: center; }}
+      .pill {{
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.6rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        padding: 5px 16px;
+        border-radius: 20px;
+        border: 1px solid #2e3a50;
+        background: transparent;
+        color: #3d4f6a;
+        cursor: pointer;
+        white-space: nowrap;
+        opacity: 0.5;
+        transition: all 0.15s ease;
+        text-decoration: none;
+      }}
+      .pill.pos-on {{
+        background: rgba(0,229,160,0.15);
+        border: 1px solid #00e5a0;
+        box-shadow: 0 0 0 1px #00e5a0;
+        color: #00e5a0;
+        opacity: 1;
+      }}
+      .pill.neu-on {{
+        background: rgba(107,125,153,0.15);
+        border: 1px solid #6b7d99;
+        box-shadow: 0 0 0 1px #6b7d99;
+        color: #b0bcd4;
+        opacity: 1;
+      }}
+      .pill.neg-on {{
+        background: rgba(255,107,107,0.15);
+        border: 1px solid #ff6b6b;
+        box-shadow: 0 0 0 1px #ff6b6b;
+        color: #ff6b6b;
+        opacity: 1;
+      }}
     </style>
-    """, unsafe_allow_html=True)
+    <div class="pill-wrap">
+      <div class="pill-row">
+        <a class="pill {'pos-on' if pos_active else ''}"
+           href="?toggle_pill=Positive" target="_top">Positive</a>
+        <a class="pill {'neu-on' if neu_active else ''}"
+           href="?toggle_pill=Neutral" target="_top">Neutral</a>
+      </div>
+      <div class="pill-row center">
+        <a class="pill {'neg-on' if neg_active else ''}"
+           href="?toggle_pill=Negative" target="_top">Negative</a>
+      </div>
+    </div>
+    """
 
-    # ── Row 1: Positive + Neutral ──
-    pcol1, pcol2 = st.columns([1, 1])
-    for col, label in zip([pcol1, pcol2], ["Positive", "Neutral"]):
-        is_active = label in st.session_state.sentiment_filters
-        with col:
-            if st.button(label, key=f"pill_{label}"):
-                if is_active:
-                    if len(st.session_state.sentiment_filters) > 1:
-                        st.session_state.sentiment_filters.remove(label)
-                else:
-                    st.session_state.sentiment_filters.append(label)
-                st.rerun()
-
-    # ── Row 2: Negative centered ──
-    _, ncenter, _ = st.columns([1, 1, 1])
-    with ncenter:
-        is_active = "Negative" in st.session_state.sentiment_filters
-        if st.button("Negative", key="pill_Negative"):
-            if is_active:
-                if len(st.session_state.sentiment_filters) > 1:
-                    st.session_state.sentiment_filters.remove("Negative")
-            else:
-                st.session_state.sentiment_filters.append("Negative")
-            st.rerun()
+    components.html(pill_html, height=85)
 
     sentiment_filters = list(st.session_state.sentiment_filters)
     
