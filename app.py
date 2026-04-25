@@ -693,7 +693,7 @@ with st.sidebar:
         display: flex;
         flex-direction: column;
         gap: 8px;
-        width: 100%;
+        width: 100vw;
       }}
       .pill-row {{
         display: flex;
@@ -701,7 +701,7 @@ with st.sidebar:
         align-items: center;
       }}
       .pill-row.center {{
-        width: 100%;
+        width: 100vw;
         justify-content: center;
       }}
       .pill {{
