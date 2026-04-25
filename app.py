@@ -697,7 +697,7 @@ with st.sidebar:
       }}
       .pill-row {{
         display: flex;
-        gap: 8px;
+        gap: 14px;
         align-items: center;
       }}
       .pill-row.center {{
@@ -756,7 +756,7 @@ with st.sidebar:
     </div>
     """
 
-    components.html(pill_html, height=70)
+    components.html(pill_html, height=70, width=700)
 
     sentiment_filters = list(st.session_state.sentiment_filters)
     
