@@ -676,52 +676,48 @@ with st.sidebar:
 
     st.markdown(f"""
     <style>
-    /* ── Top row: Positive + Neutral side by side ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:first-of-type {{
+    /* ── Shrink-wrap both rows ── */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] {{
         display: flex !important;
-        flex-wrap: nowrap !important;
+        flex-wrap: wrap !important;
         gap: 8px !important;
         align-items: center !important;
-        padding: 2px 0 0 0 !important;
+        padding: 2px 0 !important;
+        background: transparent !important;
     }}
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:first-of-type
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]
         > div[data-testid="column"] {{
         flex: 0 0 auto !important;
         width: auto !important;
         min-width: 0 !important;
         padding: 0 !important;
     }}
-    /* ── Bottom row: Negative centered ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:last-of-type {{
-        display: flex !important;
+    /* ── Center the Negative row ── */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:nth-of-type(2) {{
         justify-content: center !important;
-        padding: 6px 0 6px 0 !important;
+        padding: 4px 0 8px !important;
     }}
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:last-of-type
-        > div[data-testid="column"] {{
-        flex: 0 0 auto !important;
-        width: auto !important;
-        min-width: 0 !important;
-        padding: 0 !important;
-    }}
-    /* ── Shared pill shape ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:first-of-type .stButton > button,
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:last-of-type  .stButton > button {{
+    /* ── Shared pill shape — force shrink-wrap ── */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] .stButton > button {{
         border-radius: 20px !important;
         font-family: 'JetBrains Mono', monospace !important;
         font-size: 0.6rem !important;
         font-weight: 600 !important;
-        padding: 5px 14px !important;
+        padding: 5px 16px !important;
         min-height: 0 !important;
         height: auto !important;
         line-height: 1.4 !important;
         letter-spacing: 0.04em !important;
         width: auto !important;
+        min-width: 0 !important;
+        max-width: fit-content !important;
+        display: inline-flex !important;
+        align-items: center !important;
         white-space: nowrap !important;
         transition: all 0.15s ease !important;
     }}
     /* ── Positive ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:first-of-type
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:nth-of-type(1)
         div:nth-child(1) .stButton > button {{
         background: {"rgba(0,229,160,0.15)"   if pos_active else "transparent"} !important;
         border-color: {"#00e5a0"              if pos_active else "#2e3a50"} !important;
@@ -730,7 +726,7 @@ with st.sidebar:
         box-shadow: {"0 0 0 1px #00e5a0"      if pos_active else "none"} !important;
     }}
     /* ── Neutral ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:first-of-type
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:nth-of-type(1)
         div:nth-child(2) .stButton > button {{
         background: {"rgba(107,125,153,0.15)" if neu_active else "transparent"} !important;
         border-color: {"#6b7d99"              if neu_active else "#2e3a50"} !important;
@@ -739,7 +735,7 @@ with st.sidebar:
         box-shadow: {"0 0 0 1px #6b7d99"      if neu_active else "none"} !important;
     }}
     /* ── Negative ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:last-of-type
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:nth-of-type(2)
         div:nth-child(1) .stButton > button {{
         background: {"rgba(255,107,107,0.15)" if neg_active else "transparent"} !important;
         border-color: {"#ff6b6b"              if neg_active else "#2e3a50"} !important;
@@ -755,7 +751,7 @@ with st.sidebar:
     for col, label in zip([pcol1, pcol2], ["Positive", "Neutral"]):
         is_active = label in st.session_state.sentiment_filters
         with col:
-            if st.button(label, key=f"pill_{label}", use_container_width=False):
+            if st.button(label, key=f"pill_{label}"):
                 if is_active:
                     if len(st.session_state.sentiment_filters) > 1:
                         st.session_state.sentiment_filters.remove(label)
@@ -764,10 +760,10 @@ with st.sidebar:
                 st.rerun()
 
     # ── Row 2: Negative centered ──
-    ncol1, ncol2, ncol3 = st.columns([1, 1, 1])
-    with ncol2:
+    _, ncenter, _ = st.columns([1, 1, 1])
+    with ncenter:
         is_active = "Negative" in st.session_state.sentiment_filters
-        if st.button("Negative", key="pill_Negative", use_container_width=False):
+        if st.button("Negative", key="pill_Negative"):
             if is_active:
                 if len(st.session_state.sentiment_filters) > 1:
                     st.session_state.sentiment_filters.remove("Negative")
