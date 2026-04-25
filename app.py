@@ -754,8 +754,9 @@ with st.sidebar:
 
 # ── Actions ───────────────────────────────────────────────────────────────────
 if clear_btn:
-    st.session_state.result         = None
-    st.session_state.active_filters = None
+    st.session_state.result           = None
+    st.session_state.active_filters   = None
+    st.session_state.sentiment_filters = ["Positive", "Neutral", "Negative"]
     if "topic_input" in st.session_state:
         del st.session_state["topic_input"]
     st.rerun()
