@@ -132,41 +132,47 @@ html, body, [class*="st-"], .stApp {
   transition: all 0.15s ease !important;
   width: 100% !important;
   letter-spacing: 0.01em !important;
+  color: #8a9ab5 !important;
 }
 .stButton > button[data-testid="baseButton-primary"] {
   background: var(--acc) !important;
-  color: #ffffff !important;
+  color: #c8ffe9 !important;
   border: none !important;
   font-weight: 700 !important;
   letter-spacing: 0.02em !important;
 }
 .stButton > button[data-testid="baseButton-primary"]:hover {
   background: #00ffb3 !important;
-  color: #ffffff !important;
+  color: #c8ffe9 !important;
 }
 .stButton > button[data-testid="baseButton-primary"] p,
 .stButton > button[data-testid="baseButton-primary"] span,
 .stButton > button[data-testid="baseButton-primary"] div {
-  color: #ffffff !important;
+  color: #c8ffe9 !important;
 }
 .stButton > button[data-testid="baseButton-secondary"] {
   background: transparent !important;
-  color: var(--lo) !important;
+  color: #8a9ab5 !important;
   border: 1px solid var(--rim2) !important;
   text-align: left !important;
 }
 .stButton:first-of-type > button[data-testid="baseButton-secondary"] {
-  color: #ffffff !important;
+  color: #8a9ab5 !important;
   border-color: #2e3a50 !important;
 }
 .stButton:first-of-type > button[data-testid="baseButton-secondary"] p,
 .stButton:first-of-type > button[data-testid="baseButton-secondary"] span {
-  color: #ffffff !important;
+  color: #8a9ab5 !important;
 }
 .stButton > button[data-testid="baseButton-secondary"]:hover {
   border-color: var(--dim) !important;
-  color: var(--mid) !important;
+  color: #b0bcd4 !important;
   background: rgba(255,255,255,0.02) !important;
+}
+
+/* Hide "Press Enter to apply" tooltip */
+[data-testid="stTextInput"] div[data-testid="InputInstructions"] {
+  display: none !important;
 }
 
 /* ── Sentiment filter pills — JS in components.html handles dynamic colors ── */
