@@ -693,7 +693,7 @@ with st.sidebar:
         display: flex;
         flex-direction: column;
         gap: 8px;
-        width: 100vw;
+        width: 100%;
       }}
       .pill-row {{
         display: flex;
@@ -701,8 +701,9 @@ with st.sidebar:
         align-items: center;
       }}
       .pill-row.center {{
-        width: 100vw;
+        display: flex;
         justify-content: center;
+        width: 100%;
       }}
       .pill {{
         font-family: 'JetBrains Mono', monospace;
@@ -756,7 +757,7 @@ with st.sidebar:
     </div>
     """
 
-    components.html(pill_html, height=70, width=700)
+    components.html(pill_html, height=90)
 
     sentiment_filters = list(st.session_state.sentiment_filters)
     
