@@ -665,6 +665,7 @@ with st.sidebar:
     <p style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;
       letter-spacing:0.12em;text-transform:uppercase;color:#6b7d99;
       margin:14px 0 8px;">Filter</p>
+    <div id="qp-filter-anchor"></div>
     """, unsafe_allow_html=True)
 
     if "sentiment_filters" not in st.session_state:
@@ -676,29 +677,8 @@ with st.sidebar:
 
     st.markdown(f"""
     <style>
-    /* ── Shrink-wrap both rows ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] {{
-        display: flex !important;
-        flex-wrap: wrap !important;
-        gap: 8px !important;
-        align-items: center !important;
-        padding: 2px 0 !important;
-        background: transparent !important;
-    }}
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]
-        > div[data-testid="column"] {{
-        flex: 0 0 auto !important;
-        width: auto !important;
-        min-width: 0 !important;
-        padding: 0 !important;
-    }}
-    /* ── Center the Negative row ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:nth-of-type(2) {{
-        justify-content: center !important;
-        padding: 4px 0 8px !important;
-    }}
-    /* ── Shared pill shape — force shrink-wrap ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] .stButton > button {{
+    /* Target filter buttons by key attribute — most reliable selector */
+    [data-testid="stSidebar"] button[kind="secondary"][data-testid="baseButton-secondary"] {{
         border-radius: 20px !important;
         font-family: 'JetBrains Mono', monospace !important;
         font-size: 0.6rem !important;
@@ -709,39 +689,63 @@ with st.sidebar:
         line-height: 1.4 !important;
         letter-spacing: 0.04em !important;
         width: auto !important;
-        min-width: 0 !important;
         max-width: fit-content !important;
         display: inline-flex !important;
         align-items: center !important;
         white-space: nowrap !important;
         transition: all 0.15s ease !important;
     }}
-    /* ── Positive ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:nth-of-type(1)
-        div:nth-child(1) .stButton > button {{
+    /* Positive */
+    [data-testid="stSidebar"] button[data-testid="baseButton-secondary"][key="pill_Positive"],
+    [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:has(~ [data-testid] [key="pill_Positive"]) {{
         background: {"rgba(0,229,160,0.15)"   if pos_active else "transparent"} !important;
         border-color: {"#00e5a0"              if pos_active else "#2e3a50"} !important;
         color: {"#00e5a0"                     if pos_active else "#3d4f6a"} !important;
         opacity: {"1"                         if pos_active else "0.5"} !important;
         box-shadow: {"0 0 0 1px #00e5a0"      if pos_active else "none"} !important;
     }}
-    /* ── Neutral ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:nth-of-type(1)
-        div:nth-child(2) .stButton > button {{
+    /* Neutral */
+    [data-testid="stSidebar"] button[data-testid="baseButton-secondary"][key="pill_Neutral"] {{
         background: {"rgba(107,125,153,0.15)" if neu_active else "transparent"} !important;
         border-color: {"#6b7d99"              if neu_active else "#2e3a50"} !important;
         color: {"#b0bcd4"                     if neu_active else "#3d4f6a"} !important;
         opacity: {"1"                         if neu_active else "0.5"} !important;
         box-shadow: {"0 0 0 1px #6b7d99"      if neu_active else "none"} !important;
     }}
-    /* ── Negative ── */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:nth-of-type(2)
-        div:nth-child(1) .stButton > button {{
+    /* Negative */
+    [data-testid="stSidebar"] button[data-testid="baseButton-secondary"][key="pill_Negative"] {{
         background: {"rgba(255,107,107,0.15)" if neg_active else "transparent"} !important;
         border-color: {"#ff6b6b"              if neg_active else "#2e3a50"} !important;
         color: {"#ff6b6b"                     if neg_active else "#3d4f6a"} !important;
         opacity: {"1"                         if neg_active else "0.5"} !important;
         box-shadow: {"0 0 0 1px #ff6b6b"      if neg_active else "none"} !important;
+    }}
+    /* Layout: row 1 */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[key="pill_Positive"]) {{
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        align-items: center !important;
+        padding: 2px 0 0 0 !important;
+    }}
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[key="pill_Positive"])
+        > div[data-testid="column"] {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        padding: 0 !important;
+    }}
+    /* Layout: row 2 — Negative centered */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[key="pill_Negative"]) {{
+        display: flex !important;
+        justify-content: center !important;
+        gap: 8px !important;
+        padding: 6px 0 8px !important;
+    }}
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[key="pill_Negative"])
+        > div[data-testid="column"] {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        padding: 0 !important;
     }}
     </style>
     """, unsafe_allow_html=True)
