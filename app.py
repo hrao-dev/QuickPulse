@@ -688,22 +688,27 @@ with st.sidebar:
     pill_html = f"""
     <style>
       @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600&display=swap');
-      html, body {{ margin:0; padding:0; background: transparent; }}
+      html, body {{
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        overflow: hidden;
+      }}
       .pill-wrap {{
         display: flex;
         flex-direction: column;
         gap: 8px;
+        align-items: flex-start;
         width: 100%;
       }}
       .pill-row {{
         display: flex;
         gap: 14px;
         align-items: center;
+        width: 100%;
       }}
       .pill-row.center {{
-        display: flex;
         justify-content: center;
-        width: 100%;
       }}
       .pill {{
         font-family: 'JetBrains Mono', monospace;
@@ -757,7 +762,7 @@ with st.sidebar:
     </div>
     """
 
-    components.html(pill_html, height=90)
+    components.html(pill_html, height=62)
 
     sentiment_filters = list(st.session_state.sentiment_filters)
     
