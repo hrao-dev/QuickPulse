@@ -1,0 +1,16 @@
+# requirements.txt — QuickPulse (Streamlit edition)
+pandas
+transformers<5
+tokenizers
+torch
+newspaper3k
+nltk
+scikit-learn
+numpy
+requests
+streamlit
+lxml_html_clean
+plotly
+hdbscan
+umap-learn
+sentence_transformers
