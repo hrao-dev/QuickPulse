@@ -708,7 +708,8 @@ with st.sidebar:
         width: 100%;
       }}
       .pill-row.center {{
-        justify-content: center;
+        display: flex;
+        margin-left: 40px;
       }}
       .pill {{
         font-family: 'JetBrains Mono', monospace;
