@@ -683,18 +683,35 @@ with st.sidebar:
 
     st.markdown(f"""
     <style>
-    /* Base pill shape */
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] .stButton > button {{
+    /* Make the columns row a tight flex container */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"]) {{
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        gap: 6px !important;
+        align-items: center !important;
+        padding: 2px 0 6px !important;
+    }}
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"])
+        > div[data-testid="column"] {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: 0 !important;
+        padding: 0 !important;
+    }}
+    /* Base pill */
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"])
+        .stButton > button {{
         border-radius: 20px !important;
         font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.68rem !important;
+        font-size: 0.65rem !important;
         font-weight: 600 !important;
-        padding: 4px 13px !important;
+        padding: 3px 11px !important;
         min-height: 0 !important;
         height: auto !important;
         line-height: 1.5 !important;
         letter-spacing: 0.04em !important;
         width: auto !important;
+        white-space: nowrap !important;
         transition: all 0.15s ease !important;
     }}
     /* Positive */
@@ -703,7 +720,7 @@ with st.sidebar:
         border-color: {"#00e5a0"              if pos_active else "#2e3a50"} !important;
         color: {"#00e5a0"                     if pos_active else "#3d4f6a"} !important;
         opacity: {"1"                         if pos_active else "0.45"} !important;
-        box-shadow: {"0 0 0 2px #00e5a0"      if pos_active else "none"} !important;
+        box-shadow: {"0 0 0 1px #00e5a0"      if pos_active else "none"} !important;
     }}
     /* Neutral */
     [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] div:nth-child(2) .stButton > button {{
@@ -711,7 +728,7 @@ with st.sidebar:
         border-color: {"#6b7d99"              if neu_active else "#2e3a50"} !important;
         color: {"#b0bcd4"                     if neu_active else "#3d4f6a"} !important;
         opacity: {"1"                         if neu_active else "0.45"} !important;
-        box-shadow: {"0 0 0 2px #6b7d99"      if neu_active else "none"} !important;
+        box-shadow: {"0 0 0 1px #6b7d99"      if neu_active else "none"} !important;
     }}
     /* Negative */
     [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] div:nth-child(3) .stButton > button {{
@@ -719,16 +736,16 @@ with st.sidebar:
         border-color: {"#ff6b6b"              if neg_active else "#2e3a50"} !important;
         color: {"#ff6b6b"                     if neg_active else "#3d4f6a"} !important;
         opacity: {"1"                         if neg_active else "0.45"} !important;
-        box-shadow: {"0 0 0 2px #ff6b6b"      if neg_active else "none"} !important;
+        box-shadow: {"0 0 0 1px #ff6b6b"      if neg_active else "none"} !important;
     }}
     </style>
     """, unsafe_allow_html=True)
 
-    pcol1, pcol2, pcol3 = st.columns(3)
+    pcol1, pcol2, pcol3 = st.columns([1, 1, 1])
     for col, label in zip([pcol1, pcol2, pcol3], ["Positive", "Neutral", "Negative"]):
         is_active = label in st.session_state.sentiment_filters
         with col:
-            if st.button(("✓ " if is_active else "") + label, key=f"pill_{label}", use_container_width=False):
+            if st.button(("✓ " if is_active else "") + label, key=f"pill_{label}", use_container_width=True):
                 if is_active:
                     if len(st.session_state.sentiment_filters) > 1:
                         st.session_state.sentiment_filters.remove(label)
