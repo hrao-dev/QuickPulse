@@ -676,7 +676,25 @@ with st.sidebar:
 
     st.markdown(f"""
     <style>
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button {{
+    /* Force the columns container to wrap into two rows */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:has([data-testid="baseButton-secondary"]) {{
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }}
+    /* All three columns auto-width */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:has([data-testid="baseButton-secondary"])
+        > [data-testid="column"] {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: 0 !important;
+        padding: 0 !important;
+    }}
+    /* Shared pill style */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:has([data-testid="baseButton-secondary"])
+        .stButton > button {{
         border-radius: 20px !important;
         font-family: 'JetBrains Mono', monospace !important;
         font-size: 0.6rem !important;
@@ -687,31 +705,49 @@ with st.sidebar:
         height: auto !important;
         line-height: 1.4 !important;
         width: auto !important;
+        min-width: 0 !important;
         white-space: nowrap !important;
         transition: all 0.15s ease !important;
-        display: inline-flex !important;
-        align-items: center !important;
     }}
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] div:nth-child(1) .stButton > button {{
+    /* Positive */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:has([data-testid="baseButton-secondary"])
+        > [data-testid="column"]:nth-child(1) .stButton > button {{
         background: {"rgba(0,229,160,0.15)"   if pos_active else "transparent"} !important;
         border: 1px solid {"#00e5a0"          if pos_active else "#2e3a50"} !important;
         box-shadow: {"0 0 0 1px #00e5a0"      if pos_active else "none"} !important;
         color: {"#00e5a0"                     if pos_active else "#3d4f6a"} !important;
         opacity: {"1"                         if pos_active else "0.5"} !important;
     }}
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] div:nth-child(2) .stButton > button {{
+    /* Neutral */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:has([data-testid="baseButton-secondary"])
+        > [data-testid="column"]:nth-child(2) .stButton > button {{
         background: {"rgba(107,125,153,0.15)" if neu_active else "transparent"} !important;
         border: 1px solid {"#6b7d99"          if neu_active else "#2e3a50"} !important;
         box-shadow: {"0 0 0 1px #6b7d99"      if neu_active else "none"} !important;
         color: {"#b0bcd4"                     if neu_active else "#3d4f6a"} !important;
         opacity: {"1"                         if neu_active else "0.5"} !important;
     }}
+    /* Negative — force onto new line with left margin to visually center */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:has([data-testid="baseButton-secondary"])
+        > [data-testid="column"]:nth-child(3) {{
+        flex-basis: 100% !important;
+        display: flex !important;
+        justify-content: center !important;
+        padding-top: 0 !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:has([data-testid="baseButton-secondary"])
+        > [data-testid="column"]:nth-child(3) .stButton > button {{
+        background: {"rgba(255,107,107,0.15)" if neg_active else "transparent"} !important;
+        border: 1px solid {"#ff6b6b"          if neg_active else "#2e3a50"} !important;
+        box-shadow: {"0 0 0 1px #ff6b6b"      if neg_active else "none"} !important;
+        color: {"#ff6b6b"                     if neg_active else "#3d4f6a"} !important;
+        opacity: {"1"                         if neg_active else "0.5"} !important;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
-    # Row 1: Positive + Neutral
-    pcol1, pcol2 = st.columns([1, 1])
-    for col, label in zip([pcol1, pcol2], ["Positive", "Neutral"]):
+    pcol1, pcol2, pcol3 = st.columns([1, 1, 1])
+    for col, label in zip([pcol1, pcol2, pcol3], ["Positive", "Neutral", "Negative"]):
         is_active = label in st.session_state.sentiment_filters
         with col:
             if st.button(label, key=f"pill_{label}"):
@@ -721,41 +757,6 @@ with st.sidebar:
                 else:
                     st.session_state.sentiment_filters.append(label)
                 st.rerun()
-
-    # Row 2: Negative — styled separately, nudged to center
-    st.markdown(f"""
-    <style>
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"]
-        > div:nth-of-type(3) .stButton > button {{
-        background: {"rgba(255,107,107,0.15)" if neg_active else "transparent"} !important;
-        border: 1px solid {"#ff6b6b"          if neg_active else "#2e3a50"} !important;
-        box-shadow: {"0 0 0 1px #ff6b6b"      if neg_active else "none"} !important;
-        color: {"#ff6b6b"                     if neg_active else "#3d4f6a"} !important;
-        opacity: {"1"                         if neg_active else "0.5"} !important;
-        border-radius: 20px !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.6rem !important;
-        font-weight: 600 !important;
-        letter-spacing: 0.04em !important;
-        padding: 5px 16px !important;
-        min-height: 0 !important;
-        height: auto !important;
-        width: auto !important;
-        white-space: nowrap !important;
-        display: inline-flex !important;
-        margin-left: 40px !important;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-
-    is_neg = "Negative" in st.session_state.sentiment_filters
-    if st.button("Negative", key="pill_Negative"):
-        if is_neg:
-            if len(st.session_state.sentiment_filters) > 1:
-                st.session_state.sentiment_filters.remove("Negative")
-        else:
-            st.session_state.sentiment_filters.append("Negative")
-        st.rerun()
 
     sentiment_filters = list(st.session_state.sentiment_filters)
     
