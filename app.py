@@ -232,6 +232,33 @@ hr {
 }
 [data-testid="stHeader"] { background: transparent !important; }
 div[data-testid="column"] { padding: 0 !important; }
+
+/* ── Kill white flash on scroll — cover every Streamlit container ── */
+[data-testid="stBottom"],
+[data-testid="stBottom"] > * {
+  display: none !important;
+}
+.stStatusWidget { display: none !important; }
+footer { visibility: hidden !important; height: 0 !important; }
+
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewBlockContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"],
+section.main,
+.main,
+.stApp,
+#root,
+html, body {
+  background-color: #07090f !important;
+  background: #07090f !important;
+}
+
+/* Prevent unpainted area flashing white during scroll momentum */
+html {
+  overscroll-behavior: none;
+  background: #07090f !important;
+}
 </style>
 """
 
@@ -627,6 +654,42 @@ st.set_page_config(
 st.markdown(PAGE_CSS,  unsafe_allow_html=True)
 st.markdown(HERO_HTML, unsafe_allow_html=True)
 
+# Force dark background at JS level — CSS alone cannot always reach Streamlit's
+# shadow DOM layers in time during scroll repaints and overscroll bounce
+st.markdown("""
+<script>
+(function() {
+  var BG = '#07090f';
+  function applyDark() {
+    document.documentElement.style.setProperty('background', BG, 'important');
+    document.documentElement.style.setProperty('background-color', BG, 'important');
+    document.body.style.setProperty('background', BG, 'important');
+    document.body.style.setProperty('background-color', BG, 'important');
+    var sels = [
+      '[data-testid="stAppViewContainer"]',
+      '[data-testid="stAppViewBlockContainer"]',
+      '[data-testid="stMain"]',
+      '[data-testid="stMainBlockContainer"]',
+      '[data-testid="stBottom"]',
+      '.stApp', '.main', '#root'
+    ];
+    sels.forEach(function(sel) {
+      document.querySelectorAll(sel).forEach(function(el) {
+        el.style.setProperty('background', BG, 'important');
+        el.style.setProperty('background-color', BG, 'important');
+      });
+    });
+    document.querySelectorAll('[data-testid="stBottom"]').forEach(function(el) {
+      el.style.setProperty('display', 'none', 'important');
+    });
+  }
+  applyDark();
+  new MutationObserver(applyDark).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener('scroll', applyDark, { passive: true });
+})();
+</script>
+""", unsafe_allow_html=True)
+
 # Session state
 for key in ("result", "active_filters"):
     if key not in st.session_state:
@@ -790,6 +853,7 @@ if clear_btn:
     st.rerun()
 
 articles = []
+urls_input = st.session_state.get("urls_input", "")
 
 if run_btn:
     if topic_input and topic_input.strip():
@@ -800,7 +864,7 @@ if run_btn:
         with st.spinner(f"Extracting {len(url_list)} URLs…"):
             articles = extract_news.extract_news_articles(url_list)
     else:
-        st.warning("Enter a topic or paste URLs to get started.")
+        st.warning("Enter a topic to get started.")
     if articles:
         with st.spinner("Summarizing & clustering…"):
             st.session_state.result         = run_pipeline(articles, sentiment_filters)
@@ -916,7 +980,7 @@ else:
         color:#dde4f0;margin-bottom:0.4rem;letter-spacing:-0.02em;">Ready to pulse</p>
       <p style="font-family:'Inter',sans-serif;font-size:0.82rem;color:#2e3a50;
         max-width:320px;line-height:1.65;">
-        Type a topic in the sidebar, paste URLs, or hit
+        Type a topic in the sidebar, or hit
         <span style="color:#6b7d99;font-weight:500;">Top Headlines</span>
         to analyze the latest news.
       </p>
